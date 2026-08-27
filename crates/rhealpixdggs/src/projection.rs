@@ -6,7 +6,7 @@ use crate::ellipsoid::Ellipsoid;
 use crate::error::{Error, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Region {
+pub(crate) enum Region {
     NorthPolar,
     Equatorial,
     SouthPolar,
@@ -25,7 +25,7 @@ pub(crate) fn forward(
     let phi = latitude.to_radians();
     let beta = authalic_latitude(phi, ellipsoid.eccentricity());
     let (x, y) = healpix_sphere(lambda, beta);
-    let (x, y) = combine_triangles(x, y, north_square, south_square, false);
+    let (x, y) = combine_triangles(x, y, north_square, south_square, false, None);
     let radius = ellipsoid.authalic_radius();
     Ok((x * radius, y * radius))
 }
@@ -38,6 +38,30 @@ pub(crate) fn inverse(
     north_square: u8,
     south_square: u8,
 ) -> Result<(f64, f64)> {
+    inverse_with_region(ellipsoid, x, y, north_square, south_square, None)
+}
+
+/// Invert rHEALPix metres while resolving face-boundary rounding with an
+/// explicit projection region.
+pub(crate) fn inverse_in_region(
+    ellipsoid: Ellipsoid,
+    x: f64,
+    y: f64,
+    north_square: u8,
+    south_square: u8,
+    region: Region,
+) -> Result<(f64, f64)> {
+    inverse_with_region(ellipsoid, x, y, north_square, south_square, Some(region))
+}
+
+fn inverse_with_region(
+    ellipsoid: Ellipsoid,
+    x: f64,
+    y: f64,
+    north_square: u8,
+    south_square: u8,
+    region: Option<Region>,
+) -> Result<(f64, f64)> {
     if !x.is_finite() || !y.is_finite() {
         return Err(Error::InvalidCoordinate(
             "projected coordinates must be finite".to_owned(),
@@ -48,7 +72,7 @@ pub(crate) fn inverse(
     if !in_rhealpix_image(x, y, north_square, south_square) {
         return Err(Error::OutsideProjection);
     }
-    let (x, y) = combine_triangles(x, y, north_square, south_square, true);
+    let (x, y) = combine_triangles(x, y, north_square, south_square, true, region);
     let (lambda, beta) = healpix_sphere_inverse(x, y)?;
     let phi = common_latitude(beta, ellipsoid.eccentricity());
     Ok((wrap_longitude(lambda).to_degrees(), phi.to_degrees()))
@@ -183,14 +207,25 @@ fn region(y: f64) -> Region {
     }
 }
 
-fn triangle_number(
+pub(crate) fn triangle_number(
     x: f64,
     y: f64,
     north_square: u8,
     south_square: u8,
     inverse: bool,
 ) -> (i32, Region) {
-    let region = region(y);
+    triangle_number_with_region(x, y, north_square, south_square, inverse, None)
+}
+
+fn triangle_number_with_region(
+    x: f64,
+    y: f64,
+    north_square: u8,
+    south_square: u8,
+    inverse: bool,
+    region_hint: Option<Region>,
+) -> (i32, Region) {
+    let region = region_hint.unwrap_or_else(|| region(y));
     if region == Region::Equatorial {
         return (0, region);
     }
@@ -251,10 +286,12 @@ fn combine_triangles(
     north_square: u8,
     south_square: u8,
     inverse: bool,
+    region_hint: Option<Region>,
 ) -> (f64, f64) {
     let north_square = north_square % 4;
     let south_square = south_square % 4;
-    let (triangle, region) = triangle_number(x, y, north_square, south_square, inverse);
+    let (triangle, region) =
+        triangle_number_with_region(x, y, north_square, south_square, inverse, region_hint);
     if region == Region::Equatorial {
         return (x, y);
     }

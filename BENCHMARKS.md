@@ -14,6 +14,9 @@ resolution 12.
 | Longitude/latitude → cell | 170 ns |
 | Cell → longitude/latitude nucleus | 145 ns |
 | Parse and reformat a resolution-12 string ID | 280 ns |
+| Polar planar neighbour at resolution 12 | 60 ns |
+| Polar shape classification at resolution 12 | 5.3 ns |
+| Four polar geographic vertices at resolution 12 | 533 ns |
 
 Reproduce with:
 
@@ -39,4 +42,3 @@ The upstream optional dependency imports were replaced with inert stubs during
 this isolated comparison; imports and object construction occurred outside the
 timed loop, and the measured `cell_from_point` path still used upstream's own
 Python rHEALPix projection and cell-selection code.
-

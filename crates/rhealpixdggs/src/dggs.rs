@@ -1,6 +1,6 @@
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
-use crate::cell::{CellId, Face, validate_resolution};
+use crate::cell::{CellId, CellShape, Direction, Face, Region, validate_resolution};
 use crate::ellipsoid::Ellipsoid;
 use crate::error::{Error, Result};
 use crate::projection;
@@ -156,24 +156,60 @@ impl RhealpixDggs {
         ])
     }
 
-    /// Return four inverse-projected boundary points as longitude/latitude.
+    /// Return inverse-projected boundary points as longitude/latitude.
     ///
-    /// Polar dart cells contain one repeated/non-vertex geographic point, as
-    /// in the upstream four-point representation. Shape-aware trimming is a
-    /// planned compatibility milestone.
-    pub fn cell_vertices_lonlat(&self, cell: &CellId) -> Result<[(f64, f64); 4]> {
-        let vertices = self.cell_vertices_projected(cell)?;
-        let mut result = [(0.0, 0.0); 4];
-        for (index, point) in vertices.into_iter().enumerate() {
-            result[index] = projection::inverse(
+    /// Points begin at the geographic northwest vertex and proceed clockwise,
+    /// matching `Cell.vertices(plane=False)` in `rhealpixdggs-py`. When
+    /// `trim_dart` is true, the non-vertex point of a triangular dart is
+    /// removed.
+    pub fn cell_vertices_lonlat(&self, cell: &CellId, trim_dart: bool) -> Result<Vec<(f64, f64)>> {
+        let planar = self.cell_vertices_projected(cell)?;
+        let northwest = self.northwest_vertex_index(cell, &planar)?;
+        let mut result = Vec::with_capacity(4);
+        for offset in 0..4 {
+            let point = planar[(northwest + offset) % 4];
+            result.push(projection::inverse_in_region(
                 self.ellipsoid,
                 point.0,
                 point.1,
                 self.north_square,
                 self.south_square,
-            )?;
+                projection_region(cell.region()),
+            )?);
+        }
+        if trim_dart && cell.shape() == CellShape::Dart {
+            let non_vertex = match cell.region() {
+                Region::NorthPolar => 2,
+                Region::SouthPolar => 1,
+                Region::Equatorial => unreachable!("dart cells are polar"),
+            };
+            result.remove(non_vertex);
         }
         Ok(result)
+    }
+
+    /// Return the edge neighbour in a cardinal direction on the unfolded
+    /// rHEALPix plane, applying the required polar-face rotations.
+    pub fn planar_neighbor(&self, cell: &CellId, direction: Direction) -> CellId {
+        let mut digits = cell.digits().to_vec();
+        let mut crosses_border = true;
+        for digit in digits.iter_mut().rev() {
+            if !crosses_border {
+                break;
+            }
+            let original = *digit;
+            *digit = digit_neighbor(original, direction);
+            crosses_border = digit_on_border(original, direction);
+        }
+
+        let neighbor_face = if crosses_border {
+            self.root_neighbor(cell.face(), direction)
+        } else {
+            cell.face()
+        };
+        let neighbor = CellId::new(neighbor_face, digits).expect("input cell is already valid");
+        let turns = self.neighbor_rotation(cell.face(), neighbor_face);
+        neighbor.rotated(turns)
     }
 
     /// Return planar cell width in metres.
@@ -219,6 +255,156 @@ impl RhealpixDggs {
             root_x + root_width * column as f64 / scale as f64,
             root_y - root_width * row as f64 / scale as f64,
         ))
+    }
+
+    fn northwest_vertex_index(&self, cell: &CellId, vertices: &[(f64, f64); 4]) -> Result<usize> {
+        match cell.shape() {
+            CellShape::Quad | CellShape::Cap => Ok(0),
+            CellShape::SkewQuad => {
+                let (x, y) = self.cell_to_projected(cell)?;
+                let radius = self.ellipsoid.authalic_radius();
+                let (triangle, region) = projection::triangle_number(
+                    x / radius,
+                    y / radius,
+                    self.north_square,
+                    self.south_square,
+                    true,
+                );
+                let index = match region {
+                    projection::Region::NorthPolar => {
+                        let offset = (triangle - i32::from(self.north_square)).rem_euclid(4);
+                        (4 - offset as usize) % 4
+                    }
+                    projection::Region::SouthPolar => {
+                        (triangle - i32::from(self.south_square)).rem_euclid(4) as usize
+                    }
+                    projection::Region::Equatorial => {
+                        unreachable!("skew quadrilateral cells are polar")
+                    }
+                };
+                Ok(index)
+            }
+            CellShape::Dart => {
+                let mut poleward_index = 0;
+                let mut poleward_latitude = f64::NEG_INFINITY;
+                for (index, point) in vertices.iter().enumerate() {
+                    let (_, latitude) = projection::inverse_in_region(
+                        self.ellipsoid,
+                        point.0,
+                        point.1,
+                        self.north_square,
+                        self.south_square,
+                        projection_region(cell.region()),
+                    )?;
+                    let magnitude = latitude.abs();
+                    if magnitude >= poleward_latitude {
+                        poleward_latitude = magnitude;
+                        poleward_index = index;
+                    }
+                }
+                Ok(match cell.region() {
+                    Region::NorthPolar => poleward_index,
+                    Region::SouthPolar => (poleward_index + 1) % 4,
+                    Region::Equatorial => unreachable!("dart cells are polar"),
+                })
+            }
+        }
+    }
+
+    fn root_neighbor(&self, face: Face, direction: Direction) -> Face {
+        match face {
+            Face::O | Face::P | Face::Q | Face::R => match direction {
+                Direction::Left => equatorial_face(face.number() - 1 + 3),
+                Direction::Right => equatorial_face(face.number() - 1 + 1),
+                Direction::Down => Face::S,
+                Direction::Up => Face::N,
+            },
+            Face::N => {
+                let offset = match direction {
+                    Direction::Down => 0,
+                    Direction::Right => 1,
+                    Direction::Up => 2,
+                    Direction::Left => 3,
+                };
+                equatorial_face(self.north_square + offset)
+            }
+            Face::S => {
+                let offset = match direction {
+                    Direction::Up => 0,
+                    Direction::Right => 1,
+                    Direction::Down => 2,
+                    Direction::Left => 3,
+                };
+                equatorial_face(self.south_square + offset)
+            }
+        }
+    }
+
+    fn neighbor_rotation(&self, original: Face, neighbor: Face) -> u8 {
+        let north_left = self.root_neighbor(Face::N, Direction::Left);
+        let north_right = self.root_neighbor(Face::N, Direction::Right);
+        let north_up = self.root_neighbor(Face::N, Direction::Up);
+        let south_left = self.root_neighbor(Face::S, Direction::Left);
+        let south_right = self.root_neighbor(Face::S, Direction::Right);
+        let south_down = self.root_neighbor(Face::S, Direction::Down);
+
+        if (original == Face::S && neighbor == south_left)
+            || (original == south_right && neighbor == Face::S)
+            || (original == Face::N && neighbor == north_right)
+            || (original == north_left && neighbor == Face::N)
+        {
+            1
+        } else if (original == Face::S && neighbor == south_down)
+            || (original == south_down && neighbor == Face::S)
+            || (original == Face::N && neighbor == north_up)
+            || (original == north_up && neighbor == Face::N)
+        {
+            2
+        } else if (original == Face::S && neighbor == south_right)
+            || (original == south_left && neighbor == Face::S)
+            || (original == Face::N && neighbor == north_left)
+            || (original == north_right && neighbor == Face::N)
+        {
+            3
+        } else {
+            0
+        }
+    }
+}
+
+const fn equatorial_face(index: u8) -> Face {
+    match index % 4 {
+        0 => Face::O,
+        1 => Face::P,
+        2 => Face::Q,
+        3 => Face::R,
+        _ => unreachable!(),
+    }
+}
+
+const fn projection_region(region: Region) -> projection::Region {
+    match region {
+        Region::NorthPolar => projection::Region::NorthPolar,
+        Region::Equatorial => projection::Region::Equatorial,
+        Region::SouthPolar => projection::Region::SouthPolar,
+    }
+}
+
+const fn digit_on_border(digit: u8, direction: Direction) -> bool {
+    match direction {
+        Direction::Left => digit % 3 == 0,
+        Direction::Right => digit % 3 == 2,
+        Direction::Up => digit / 3 == 0,
+        Direction::Down => digit / 3 == 2,
+    }
+}
+
+const fn digit_neighbor(digit: u8, direction: Direction) -> u8 {
+    match direction {
+        Direction::Left => digit / 3 * 3 + (digit % 3 + 2) % 3,
+        Direction::Right => digit / 3 * 3 + (digit % 3 + 1) % 3,
+        Direction::Up => ((digit / 3 + 2) % 3) * 3 + digit % 3,
+        Direction::Down => ((digit / 3 + 1) % 3) * 3 + digit % 3,
     }
 }
 
@@ -310,6 +496,127 @@ mod tests {
                     .to_string(),
                 expected
             );
+        }
+    }
+
+    #[test]
+    fn planar_neighbors_match_upstream_polar_and_wrapping_cases() {
+        let dggs = RhealpixDggs::wgs84_003();
+        let cases = [
+            ("N0", ["R0", "N1", "N3", "Q2"]),
+            ("S0", ["R8", "S1", "S3", "O6"]),
+            ("N62", ["N61", "N70", "N65", "N38"]),
+            ("O0", ["R2", "O1", "O3", "N6"]),
+            ("Q888", ["Q887", "R666", "S666", "Q885"]),
+            ("R000", ["Q222", "R001", "R003", "N000"]),
+        ];
+        for (identifier, expected) in cases {
+            let cell: CellId = identifier.parse().unwrap();
+            let actual =
+                Direction::ALL.map(|direction| dggs.planar_neighbor(&cell, direction).to_string());
+            assert_eq!(actual, expected, "{identifier}");
+        }
+    }
+
+    #[test]
+    fn planar_neighbors_respect_custom_polar_square_positions() {
+        let dggs = RhealpixDggs::new(Ellipsoid::wgs84(), 1, 3);
+        let cases = [
+            ("N0", ["O0", "N1", "N3", "R2"]),
+            ("S0", ["Q8", "S1", "S3", "R6"]),
+            ("O0", ["R2", "O1", "O3", "N0"]),
+        ];
+        for (identifier, expected) in cases {
+            let cell: CellId = identifier.parse().unwrap();
+            let actual =
+                Direction::ALL.map(|direction| dggs.planar_neighbor(&cell, direction).to_string());
+            assert_eq!(actual, expected, "{identifier}");
+        }
+    }
+
+    #[test]
+    fn geographic_vertices_match_upstream_order_and_dart_trimming() {
+        let dggs = RhealpixDggs::wgs84_003();
+        let cases: [(&str, &[(f64, f64)]); 5] = [
+            (
+                "N0",
+                &[
+                    (90.0, 74.424_006_701_996),
+                    (120.0, 41.937_853_910_160),
+                    (90.0, 41.937_853_910_160),
+                    (60.0, 41.937_853_910_160),
+                ],
+            ),
+            (
+                "S0",
+                &[
+                    (150.0, -41.937_853_910_160),
+                    (-180.0, -41.937_853_910_160),
+                    (-150.0, -41.937_853_910_160),
+                    (-180.0, -74.424_006_701_996),
+                ],
+            ),
+            (
+                "N43",
+                &[
+                    (90.0, 84.823_337_653_191),
+                    (-180.0, 84.823_337_653_191),
+                    (150.0, 74.424_006_701_996),
+                    (120.0, 74.424_006_701_996),
+                ],
+            ),
+            (
+                "S43",
+                &[
+                    (120.0, -74.424_006_701_996),
+                    (150.0, -74.424_006_701_996),
+                    (-180.0, -84.823_337_653_191),
+                    (90.0, -84.823_337_653_191),
+                ],
+            ),
+            (
+                "Q77",
+                &[
+                    (40.0, -31.346_830_117_185_274),
+                    (50.0, -31.346_830_117_185_274),
+                    (50.0, -41.937_853_910_160_13),
+                    (40.0, -41.937_853_910_160_13),
+                ],
+            ),
+        ];
+        for (identifier, expected) in cases {
+            let cell: CellId = identifier.parse().unwrap();
+            let actual = dggs.cell_vertices_lonlat(&cell, false).unwrap();
+            assert_eq!(actual.len(), expected.len());
+            for (actual, expected) in actual.into_iter().zip(expected) {
+                assert_close(actual, *expected, 2e-10);
+            }
+        }
+
+        for identifier in ["N0", "S0", "N62", "S62"] {
+            let cell: CellId = identifier.parse().unwrap();
+            assert_eq!(dggs.cell_vertices_lonlat(&cell, true).unwrap().len(), 3);
+        }
+    }
+
+    #[test]
+    fn every_cell_through_resolution_three_has_valid_geographic_vertices() {
+        let dggs = RhealpixDggs::wgs84_003();
+        for face_number in 0..6 {
+            let root = CellId::new(Face::from_number(face_number).unwrap(), Vec::new()).unwrap();
+            for resolution in 0..=3 {
+                for cell in root.descendants(resolution).unwrap() {
+                    let vertices = dggs.cell_vertices_lonlat(&cell, false).unwrap();
+                    assert_eq!(vertices.len(), 4, "{cell}");
+                    let trimmed = dggs.cell_vertices_lonlat(&cell, true).unwrap();
+                    let expected = if cell.shape() == CellShape::Dart {
+                        3
+                    } else {
+                        4
+                    };
+                    assert_eq!(trimmed.len(), expected, "{cell}");
+                }
+            }
         }
     }
 }

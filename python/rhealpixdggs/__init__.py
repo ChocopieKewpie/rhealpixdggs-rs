@@ -12,9 +12,13 @@ from ._rhealpixdggs import (
     cell_to_boundary,
     cell_to_children,
     cell_to_latlng,
+    cell_to_neighbor,
+    cell_to_neighbors,
     cell_to_parent,
     compact_cells,
     get_base_cell_number,
+    get_cell_region,
+    get_cell_shape,
     get_resolution,
     int_to_str,
     is_valid_cell,
@@ -23,17 +27,25 @@ from ._rhealpixdggs import (
     str_to_int,
     uncompact_cells,
 )
+from .compat import Cell, RHEALPixDGGS, WGS84_003
 
 __all__ = [
     "MAX_RESOLUTION",
     "__version__",
+    "Cell",
+    "RHEALPixDGGS",
+    "WGS84_003",
     "cell_area",
     "cell_to_boundary",
     "cell_to_children",
     "cell_to_latlng",
+    "cell_to_neighbor",
+    "cell_to_neighbors",
     "cell_to_parent",
     "compact_cells",
     "get_base_cell_number",
+    "get_cell_region",
+    "get_cell_shape",
     "get_resolution",
     "int_to_str",
     "is_valid_cell",
@@ -42,4 +54,3 @@ __all__ = [
     "str_to_int",
     "uncompact_cells",
 ]
-

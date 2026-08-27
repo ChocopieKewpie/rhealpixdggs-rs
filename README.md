@@ -3,10 +3,10 @@
 A Rust-first implementation of the aperture-9 rHEALPix Discrete Global Grid
 System, with Python as the first supported language binding.
 
-> **Status: early alpha.** Point indexing, projection, cell nuclei, four-point
-> boundaries, hierarchy operations, equal-area metrics, and stable integer IDs
-> are implemented. This is not yet a drop-in replacement for every class and
-> geometry operation in
+> **Status: early alpha.** Point indexing, projection, shape-aware vertices,
+> planar neighbours, hierarchy operations, equal-area metrics, stable integer
+> IDs, and an initial upstream object facade are implemented. This is not yet a
+> drop-in replacement for every geometry operation in
 > [`rhealpixdggs-py`](https://github.com/manaakiwhenua/rhealpixdggs-py).
 
 ## Why this layout
@@ -43,6 +43,7 @@ assert cell == "R887560473610"
 lat, lng = rh.cell_to_latlng(cell)
 boundary = rh.cell_to_boundary(cell)
 children = rh.cell_to_children(cell)
+neighbors = rh.cell_to_neighbors(cell)
 
 integer_id = rh.str_to_int(cell)
 assert rh.int_to_str(integer_id) == cell
@@ -50,6 +51,23 @@ assert rh.int_to_str(integer_id) == cell
 
 The Python API follows H3's coordinate convention: functions accept and return
 `(latitude, longitude)`. The Rust core uses `(longitude, latitude)`.
+
+Existing `rhealpixdggs-py` code can start migrating through the object facade,
+which retains the upstream `(longitude, latitude)` convention:
+
+```python
+from rhealpixdggs import WGS84_003
+
+cell = WGS84_003.cell(("N", 6, 2))
+assert cell.ellipsoidal_shape == "dart"
+assert str(cell.neighbor("up")) == "N38"
+vertices = cell.vertices(plane=False, trim_dart=True)
+```
+
+The facade currently supports aperture 9 on WGS84, configurable polar-square
+positions, point indexing, nuclei, vertices, planar neighbours, hierarchy
+expansion, and cell metrics. Alternate ellipsoids, alternate apertures, and
+ellipsoidal direction names remain on the roadmap.
 
 ## Initial performance
 
@@ -78,12 +96,14 @@ let (longitude, latitude) = dggs.cell_to_lonlat(&cell)?;
 |---|---:|---:|---:|
 | WGS84_003 point → cell | Yes | Yes | Golden-tested |
 | Cell → projected/geographic nucleus | Yes | Yes | Golden-tested |
-| Four inverse-projected square corners | Yes | Yes | Partial for polar shape semantics |
+| Shape classification and geographic vertices | Yes | Yes | Golden-tested, including dart trimming |
+| Planar edge neighbours | Yes | Yes | Golden-tested, including polar rotations |
 | Parent, children, descendants | Yes | Yes | Yes |
 | Recursive compact/uncompact | Yes | Yes | Yes |
 | String ↔ stable `u64` | Yes | Yes | New API |
 | Equal-area cell metric | Yes | Yes | Golden-tested |
-| Neighbours and shape classification | Planned | Planned | No |
+| `RHEALPixDGGS` / `Cell` object facade | — | Partial | Core migration calls supported |
+| Ellipsoidal neighbour direction names | Planned | Planned | No |
 | Lines, polygons, and region filling | Planned | Planned | No |
 | Custom aperture / `N_side` | Planned decision | — | No |
 
@@ -112,9 +132,9 @@ The first target is numerical and identifier parity with the upstream
 algorithms should be benchmarked against both the Rust implementation and the
 released Python package; speed changes must not silently change cell IDs.
 
-The Python surface is intentionally H3-like for new code. A separate
-compatibility facade for upstream `RHEALPixDGGS` and `Cell` objects is planned
-after the core semantics are complete.
+The Python surface is intentionally H3-like for new code. The separate
+`RHEALPixDGGS` and `Cell` facade preserves upstream coordinate ordering and is
+being expanded incrementally as matching core semantics land.
 
 ## Licence and attribution
 

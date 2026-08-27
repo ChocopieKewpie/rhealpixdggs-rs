@@ -10,7 +10,7 @@ mod ellipsoid;
 mod error;
 mod projection;
 
-pub use cell::{CellId, Face, compact_cells, uncompact_cells};
+pub use cell::{CellId, CellShape, Direction, Face, Region, compact_cells, uncompact_cells};
 pub use dggs::RhealpixDggs;
 pub use ellipsoid::{Ellipsoid, WGS84_A, WGS84_INVERSE_FLATTENING};
 pub use error::{Error, Result};

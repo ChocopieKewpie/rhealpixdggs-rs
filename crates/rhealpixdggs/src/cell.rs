@@ -26,6 +26,95 @@ pub enum Face {
     S = 5,
 }
 
+/// Broad geographic region occupied by a cell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Region {
+    /// The north-polar rHEALPix face.
+    NorthPolar,
+    /// One of the four equatorial faces.
+    Equatorial,
+    /// The south-polar rHEALPix face.
+    SouthPolar,
+}
+
+impl Region {
+    /// Return the name used by `rhealpixdggs-py`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NorthPolar => "north_polar",
+            Self::Equatorial => "equatorial",
+            Self::SouthPolar => "south_polar",
+        }
+    }
+}
+
+/// Shape of a cell after inverse projection onto the ellipsoid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CellShape {
+    /// An equatorial quadrilateral.
+    Quad,
+    /// A polar cap containing a pole.
+    Cap,
+    /// A polar triangular dart.
+    Dart,
+    /// A polar skew quadrilateral.
+    SkewQuad,
+}
+
+impl CellShape {
+    /// Return the name used by `rhealpixdggs-py`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Quad => "quad",
+            Self::Cap => "cap",
+            Self::Dart => "dart",
+            Self::SkewQuad => "skew_quad",
+        }
+    }
+}
+
+/// Cardinal direction on the rHEALPix unfolded plane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Direction {
+    /// Decreasing planar x.
+    Left,
+    /// Increasing planar x.
+    Right,
+    /// Decreasing planar y.
+    Down,
+    /// Increasing planar y.
+    Up,
+}
+
+impl Direction {
+    /// All planar directions in upstream dictionary order.
+    pub const ALL: [Self; 4] = [Self::Left, Self::Right, Self::Down, Self::Up];
+
+    /// Return the upstream-compatible name.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Left => "left",
+            Self::Right => "right",
+            Self::Down => "down",
+            Self::Up => "up",
+        }
+    }
+}
+
+impl FromStr for Direction {
+    type Err = Error;
+
+    fn from_str(value: &str) -> Result<Self> {
+        match value {
+            "left" => Ok(Self::Left),
+            "right" => Ok(Self::Right),
+            "down" => Ok(Self::Down),
+            "up" => Ok(Self::Up),
+            _ => Err(Error::InvalidDirection(value.to_owned())),
+        }
+    }
+}
+
 impl Face {
     /// Construct a face from its zero-based number.
     pub const fn from_number(value: u8) -> Option<Self> {
@@ -113,6 +202,58 @@ impl CellId {
     /// Return this cell's resolution.
     pub fn resolution(&self) -> u8 {
         self.digits.len() as u8
+    }
+
+    /// Return the upstream geographic region classification.
+    pub const fn region(&self) -> Region {
+        match self.face {
+            Face::N => Region::NorthPolar,
+            Face::S => Region::SouthPolar,
+            Face::O | Face::P | Face::Q | Face::R => Region::Equatorial,
+        }
+    }
+
+    /// Return the upstream ellipsoidal shape classification.
+    pub fn shape(&self) -> CellShape {
+        if self.region() == Region::Equatorial {
+            return CellShape::Quad;
+        }
+        if self.digits.iter().all(|digit| *digit == 4) {
+            return CellShape::Cap;
+        }
+        if self.digits.iter().all(|digit| matches!(digit, 0 | 4 | 8))
+            || self.digits.iter().all(|digit| matches!(digit, 2 | 4 | 6))
+        {
+            return CellShape::Dart;
+        }
+        CellShape::SkewQuad
+    }
+
+    /// Rotate every child digit anticlockwise by quarter turns.
+    ///
+    /// The resolution-zero face remains fixed. This is the transformation
+    /// used when planar neighbours cross a folded polar-face boundary.
+    pub fn rotated(&self, quarter_turns: u8) -> Self {
+        let turns = quarter_turns % 4;
+        if turns == 0 {
+            return self.clone();
+        }
+        let digits = self
+            .digits
+            .iter()
+            .map(|digit| {
+                let mut row = digit / 3;
+                let mut column = digit % 3;
+                for _ in 0..turns {
+                    (row, column) = (column, 2 - row);
+                }
+                row * 3 + column
+            })
+            .collect();
+        Self {
+            face: self.face,
+            digits,
+        }
     }
 
     /// Return this cell's direct parent, or `None` for a resolution-zero cell.
@@ -380,6 +521,33 @@ mod tests {
         assert_eq!(child.parent().unwrap(), parent);
         assert_eq!(child.parent_at(0).unwrap().to_string(), "Q");
         assert_eq!(parent.children().unwrap().len(), 9);
+    }
+
+    #[test]
+    fn region_shape_and_rotation_match_upstream() {
+        let cases = [
+            ("N", Region::NorthPolar, CellShape::Cap),
+            ("S", Region::SouthPolar, CellShape::Cap),
+            ("P2", Region::Equatorial, CellShape::Quad),
+            ("N4", Region::NorthPolar, CellShape::Cap),
+            ("N0", Region::NorthPolar, CellShape::Dart),
+            ("N43", Region::NorthPolar, CellShape::SkewQuad),
+            ("N404", Region::NorthPolar, CellShape::Dart),
+            ("N246", Region::NorthPolar, CellShape::Dart),
+        ];
+        for (identifier, region, shape) in cases {
+            let cell: CellId = identifier.parse().unwrap();
+            assert_eq!(cell.region(), region, "{identifier}");
+            assert_eq!(cell.shape(), shape, "{identifier}");
+        }
+
+        let cell: CellId = "N0".parse().unwrap();
+        assert_eq!(
+            (0..4)
+                .map(|turns| cell.rotated(turns).to_string())
+                .collect::<Vec<_>>(),
+            ["N0", "N2", "N8", "N6"]
+        );
     }
 
     #[test]

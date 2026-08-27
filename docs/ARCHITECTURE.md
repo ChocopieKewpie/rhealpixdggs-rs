@@ -34,7 +34,17 @@ comfortably in `u64`. This encoding is explicitly alpha until 1.0.
 
 The core uses `(longitude, latitude)` for geographic coordinates and metres for
 projected coordinates. Angles at the public Rust boundary are degrees. The
-Python facade swaps to H3-compatible `(latitude, longitude)` ordering.
+H3-style Python functions swap to `(latitude, longitude)` ordering. The
+upstream-compatibility `RHEALPixDGGS`/`Cell` facade deliberately retains
+`(longitude, latitude)` so existing callers do not need coordinate shims.
+
+## Topology and shape semantics
+
+Region and ellipsoidal-shape classification live on `CellId` because they are
+pure functions of the face and aperture-9 child digits. Neighbour traversal
+lives on `RhealpixDggs` because polar-square placement changes resolution-zero
+face adjacency. Geographic vertex ordering likewise belongs to the DGGS: polar
+skew quadrilaterals and darts require projection-triangle context.
 
 ## Correctness strategy
 
@@ -50,4 +60,3 @@ The initial core is dependency-free and allocation-light for single-point
 indexing. Bulk interfaces will accept contiguous coordinate and output buffers.
 Parallelism will be optional and introduced only where benchmarks show a net
 benefit; native code alone does not make Python-to-Rust call overhead free.
-

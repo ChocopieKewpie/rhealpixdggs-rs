@@ -23,6 +23,8 @@ pub enum Error {
     },
     /// Geographic input was non-finite or outside its valid range.
     InvalidCoordinate(String),
+    /// A planar direction name was not one of left, right, down, or up.
+    InvalidDirection(String),
     /// Projected input does not lie inside the rHEALPix image.
     OutsideProjection,
     /// A bulk expansion would allocate an unreasonable number of cells.
@@ -47,6 +49,10 @@ impl fmt::Display for Error {
                 "descendant resolution {requested} is coarser than cell resolution {cell}"
             ),
             Self::InvalidCoordinate(message) => write!(f, "invalid coordinate: {message}"),
+            Self::InvalidDirection(value) => write!(
+                f,
+                "invalid planar direction {value:?}; expected left, right, down, or up"
+            ),
             Self::OutsideProjection => write!(f, "point lies outside the rHEALPix image"),
             Self::ExpansionTooLarge(count) => write!(
                 f,

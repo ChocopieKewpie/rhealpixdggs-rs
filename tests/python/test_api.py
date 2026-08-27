@@ -55,3 +55,80 @@ def test_validation() -> None:
     with pytest.raises(ValueError):
         rh.latlng_to_cell(91.0, 0.0, 3)
 
+
+@pytest.mark.parametrize(
+    ("cell", "region", "shape"),
+    [
+        ("P2", "equatorial", "quad"),
+        ("N", "north_polar", "cap"),
+        ("S4", "south_polar", "cap"),
+        ("N62", "north_polar", "dart"),
+        ("S43", "south_polar", "skew_quad"),
+    ],
+)
+def test_region_and_shape_match_upstream(cell: str, region: str, shape: str) -> None:
+    assert rh.get_cell_region(cell) == region
+    assert rh.get_cell_shape(cell) == shape
+
+
+def test_planar_neighbors_include_polar_rotations() -> None:
+    assert rh.cell_to_neighbors("N0") == {
+        "left": "R0",
+        "right": "N1",
+        "down": "N3",
+        "up": "Q2",
+    }
+    assert rh.cell_to_neighbor("Q888", "right") == "R666"
+    assert rh.cell_to_neighbor("Q888", "down") == "S666"
+    with pytest.raises(ValueError):
+        rh.cell_to_neighbor("N0", "north")
+
+
+def test_geographic_vertex_order_and_dart_trimming() -> None:
+    boundary = rh.cell_to_boundary("N0")
+    assert len(boundary) == 4
+    expected = [
+        (74.424006701996, 90.0),
+        (41.937853910160, 120.0),
+        (41.937853910160, 90.0),
+        (41.937853910160, 60.0),
+    ]
+    for actual, reference in zip(boundary, expected):
+        assert actual == pytest.approx(reference, abs=2e-10)
+    assert len(rh.cell_to_boundary("N0", trim_dart=True)) == 3
+    assert len(rh.cell_to_boundary("N43", trim_dart=True)) == 4
+
+
+def test_upstream_object_facade() -> None:
+    dggs = rh.RHEALPixDGGS()
+    cell = dggs.cell(("N", 6, 2))
+    assert isinstance(cell, rh.Cell)
+    assert str(cell) == "N62"
+    assert cell.suid == ("N", 6, 2)
+    assert cell.resolution == 2
+    assert cell.region() == "north_polar"
+    assert cell.ellipsoidal_shape == "dart"
+    assert {name: str(value) for name, value in cell.neighbors().items()} == {
+        "left": "N61",
+        "right": "N70",
+        "down": "N65",
+        "up": "N38",
+    }
+    assert len(cell.vertices(plane=False, trim_dart=True)) == 3
+    assert [str(value) for value in dggs.cell("P").subcells()] == [
+        f"P{digit}" for digit in range(9)
+    ]
+    assert str(dggs.cell_from_point(1, (0.0, 0.0))) == "Q3"
+    assert str(dggs.cell_from_point(1, (0.0, 45.0), plane=False)) == "N2"
+
+
+def test_facade_respects_custom_polar_square_positions_and_metrics() -> None:
+    dggs = rh.RHEALPixDGGS(north_square=1, south_square=3)
+    assert str(dggs.cell("N0").neighbor("left")) == "O0"
+    assert str(dggs.cell("S0").neighbor("up")) == "R6"
+    cell = dggs.cell("P57")
+    assert math.isclose(cell.area(plane=True), cell.width() ** 2)
+    assert math.isclose(cell.area(plane=False), rh.cell_area("P57"))
+    assert cell.width(plane=False) is None
+    with pytest.raises(NotImplementedError):
+        cell.neighbors(plane=False)

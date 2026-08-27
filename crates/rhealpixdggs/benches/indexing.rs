@@ -3,7 +3,7 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use rhealpixdggs::{CellId, RhealpixDggs};
+use rhealpixdggs::{CellId, Direction, RhealpixDggs};
 
 fn benchmarks(criterion: &mut Criterion) {
     let dggs = RhealpixDggs::wgs84_003();
@@ -24,6 +24,22 @@ fn benchmarks(criterion: &mut Criterion) {
         bench.iter(|| {
             let value = black_box("S407138265401");
             value.parse::<CellId>().unwrap().to_string()
+        });
+    });
+
+    let polar_cell: CellId = "N622446670001".parse().unwrap();
+    criterion.bench_function("planar_neighbor_polar_r12", |bench| {
+        bench.iter(|| dggs.planar_neighbor(black_box(&polar_cell), black_box(Direction::Up)));
+    });
+
+    criterion.bench_function("shape_classification_r12", |bench| {
+        bench.iter(|| black_box(&polar_cell).shape());
+    });
+
+    criterion.bench_function("geographic_vertices_polar_r12", |bench| {
+        bench.iter(|| {
+            dggs.cell_vertices_lonlat(black_box(&polar_cell), black_box(false))
+                .unwrap()
         });
     });
 }
