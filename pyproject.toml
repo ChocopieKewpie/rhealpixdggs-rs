@@ -9,7 +9,7 @@ description = "Fast rHEALPix discrete global grid indexing powered by Rust"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
-authors = [{ name = "rHEALPixDGGS Rust contributors" }]
+authors = [{ name = "James Ardo" }]
 keywords = ["DGGS", "rHEALPix", "geospatial", "Rust"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -22,8 +22,8 @@ classifiers = [
 test = ["pytest>=8"]
 
 [project.urls]
-Repository = "https://github.com/manaakiwhenua/rhealpixdggs-rs"
-Issues = "https://github.com/manaakiwhenua/rhealpixdggs-rs/issues"
+Repository = "https://github.com/ChocopieKewpie/rhealpixdggs-rs"
+Issues = "https://github.com/ChocopieKewpie/rhealpixdggs-rs/issues"
 
 [tool.maturin]
 manifest-path = "bindings/python/Cargo.toml"
@@ -35,4 +35,3 @@ strip = true
 [tool.pytest.ini_options]
 testpaths = ["tests/python"]
 addopts = "-ra"
-

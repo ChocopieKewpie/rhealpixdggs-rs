@@ -15,6 +15,7 @@ resolution 12.
 | Cell → longitude/latitude nucleus | 145 ns |
 | Parse and reformat a resolution-12 string ID | 280 ns |
 | Polar planar neighbour at resolution 12 | 60 ns |
+| Four ellipsoidal neighbours for a polar cell at resolution 12 | 1.07 µs |
 | Polar shape classification at resolution 12 | 5.3 ns |
 | Four polar geographic vertices at resolution 12 | 533 ns |
 

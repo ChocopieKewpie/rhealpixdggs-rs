@@ -115,6 +115,77 @@ impl FromStr for Direction {
     }
 }
 
+/// Geographic edge-neighbour direction on the ellipsoid.
+///
+/// The valid names depend on cell shape. Cap cells use indexed poleward
+/// directions, while darts use diagonal names on their equatorward side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EllipsoidalDirection {
+    /// Geographic north.
+    North,
+    /// Geographic south.
+    South,
+    /// Geographic east.
+    East,
+    /// Geographic west.
+    West,
+    /// Geographic northeast, used by southern darts.
+    NorthEast,
+    /// Geographic northwest, used by southern darts.
+    NorthWest,
+    /// Geographic southeast, used by northern darts.
+    SouthEast,
+    /// Geographic southwest, used by northern darts.
+    SouthWest,
+    /// Indexed northward neighbour of a southern cap.
+    NorthIndexed(u8),
+    /// Indexed southward neighbour of a northern cap.
+    SouthIndexed(u8),
+}
+
+impl fmt::Display for EllipsoidalDirection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::North => f.write_str("north"),
+            Self::South => f.write_str("south"),
+            Self::East => f.write_str("east"),
+            Self::West => f.write_str("west"),
+            Self::NorthEast => f.write_str("north_east"),
+            Self::NorthWest => f.write_str("north_west"),
+            Self::SouthEast => f.write_str("south_east"),
+            Self::SouthWest => f.write_str("south_west"),
+            Self::NorthIndexed(index) => write!(f, "north_{index}"),
+            Self::SouthIndexed(index) => write!(f, "south_{index}"),
+        }
+    }
+}
+
+impl FromStr for EllipsoidalDirection {
+    type Err = Error;
+
+    fn from_str(value: &str) -> Result<Self> {
+        match value {
+            "north" => Ok(Self::North),
+            "south" => Ok(Self::South),
+            "east" => Ok(Self::East),
+            "west" => Ok(Self::West),
+            "north_east" => Ok(Self::NorthEast),
+            "north_west" => Ok(Self::NorthWest),
+            "south_east" => Ok(Self::SouthEast),
+            "south_west" => Ok(Self::SouthWest),
+            "north_0" => Ok(Self::NorthIndexed(0)),
+            "north_1" => Ok(Self::NorthIndexed(1)),
+            "north_2" => Ok(Self::NorthIndexed(2)),
+            "north_3" => Ok(Self::NorthIndexed(3)),
+            "south_0" => Ok(Self::SouthIndexed(0)),
+            "south_1" => Ok(Self::SouthIndexed(1)),
+            "south_2" => Ok(Self::SouthIndexed(2)),
+            "south_3" => Ok(Self::SouthIndexed(3)),
+            _ => Err(Error::InvalidEllipsoidalDirection(value.to_owned())),
+        }
+    }
+}
+
 impl Face {
     /// Construct a face from its zero-based number.
     pub const fn from_number(value: u8) -> Option<Self> {
@@ -548,6 +619,29 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["N0", "N2", "N8", "N6"]
         );
+    }
+
+    #[test]
+    fn ellipsoidal_direction_names_round_trip() {
+        for name in [
+            "north",
+            "south",
+            "east",
+            "west",
+            "north_east",
+            "north_west",
+            "south_east",
+            "south_west",
+            "north_0",
+            "north_3",
+            "south_0",
+            "south_3",
+        ] {
+            let direction: EllipsoidalDirection = name.parse().unwrap();
+            assert_eq!(direction.to_string(), name);
+        }
+        assert!("left".parse::<EllipsoidalDirection>().is_err());
+        assert!("north_4".parse::<EllipsoidalDirection>().is_err());
     }
 
     #[test]

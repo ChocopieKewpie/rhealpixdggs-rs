@@ -6,7 +6,7 @@ use std::str::FromStr;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use rhealpixdggs::{
-    CellId, Direction, Ellipsoid, Error, MAX_RESOLUTION, RhealpixDggs,
+    CellId, Direction, Ellipsoid, EllipsoidalDirection, Error, MAX_RESOLUTION, RhealpixDggs,
     compact_cells as compact_core, uncompact_cells as uncompact_core,
 };
 
@@ -78,34 +78,69 @@ fn get_cell_shape(cell: &str) -> PyResult<&'static str> {
     Ok(parse_cell(cell)?.shape().as_str())
 }
 
-/// Return one WGS84_003 planar edge neighbour.
-#[pyfunction]
-fn cell_to_neighbor(cell: &str, direction: &str) -> PyResult<String> {
-    let cell = parse_cell(cell)?;
-    let direction = Direction::from_str(direction).map_err(value_error)?;
-    Ok(RhealpixDggs::wgs84_003()
-        .planar_neighbor(&cell, direction)
-        .to_string())
-}
-
-/// Return all four WGS84_003 planar edge neighbours.
-#[pyfunction]
-fn cell_to_neighbors(cell: &str) -> PyResult<BTreeMap<&'static str, String>> {
+/// Return one WGS84_003 planar or ellipsoidal edge neighbour.
+#[pyfunction(signature = (cell, direction, plane=true))]
+fn cell_to_neighbor(cell: &str, direction: &str, plane: bool) -> PyResult<Option<String>> {
     let cell = parse_cell(cell)?;
     let dggs = RhealpixDggs::wgs84_003();
-    Ok(Direction::ALL
-        .into_iter()
-        .map(|direction| {
-            (
-                direction.as_str(),
-                dggs.planar_neighbor(&cell, direction).to_string(),
-            )
-        })
-        .collect())
+    if plane {
+        let direction = Direction::from_str(direction).map_err(value_error)?;
+        Ok(Some(dggs.planar_neighbor(&cell, direction).to_string()))
+    } else {
+        let direction = EllipsoidalDirection::from_str(direction).map_err(value_error)?;
+        dggs.ellipsoidal_neighbor(&cell, direction)
+            .map(|neighbour| neighbour.map(|value| value.to_string()))
+            .map_err(value_error)
+    }
+}
+
+/// Return all four WGS84_003 planar or ellipsoidal edge neighbours.
+#[pyfunction(signature = (cell, plane=true))]
+fn cell_to_neighbors(cell: &str, plane: bool) -> PyResult<BTreeMap<String, String>> {
+    let cell = parse_cell(cell)?;
+    let dggs = RhealpixDggs::wgs84_003();
+    configured_neighbors(&dggs, &cell, plane)
 }
 
 fn configured_dggs(north_square: u8, south_square: u8) -> RhealpixDggs {
     RhealpixDggs::new(Ellipsoid::wgs84(), north_square, south_square)
+}
+
+fn configured_neighbors(
+    dggs: &RhealpixDggs,
+    cell: &CellId,
+    plane: bool,
+) -> PyResult<BTreeMap<String, String>> {
+    Ok(configured_neighbor_pairs(dggs, cell, plane)?
+        .into_iter()
+        .collect())
+}
+
+fn configured_neighbor_pairs(
+    dggs: &RhealpixDggs,
+    cell: &CellId,
+    plane: bool,
+) -> PyResult<Vec<(String, String)>> {
+    if plane {
+        Ok(Direction::ALL
+            .into_iter()
+            .map(|direction| {
+                (
+                    direction.as_str().to_owned(),
+                    dggs.planar_neighbor(cell, direction).to_string(),
+                )
+            })
+            .collect())
+    } else {
+        dggs.ellipsoidal_neighbors(cell)
+            .map(|neighbours| {
+                neighbours
+                    .into_iter()
+                    .map(|(direction, neighbour)| (direction.to_string(), neighbour.to_string()))
+                    .collect()
+            })
+            .map_err(value_error)
+    }
 }
 
 /// Compatibility-facade point indexing with upstream coordinate ordering.
@@ -169,23 +204,43 @@ fn compat_cell_vertices(
 }
 
 /// Compatibility-facade neighbour with configurable polar squares.
-#[pyfunction(name = "_cell_neighbor", signature = (cell, direction, north_square=0, south_square=0))]
+#[pyfunction(name = "_cell_neighbor", signature = (cell, direction, plane=true, north_square=0, south_square=0))]
 fn compat_cell_neighbor(
     cell: &str,
     direction: &str,
+    plane: bool,
     north_square: u8,
     south_square: u8,
 ) -> PyResult<Option<String>> {
     let cell = parse_cell(cell)?;
-    let direction = match Direction::from_str(direction) {
-        Ok(direction) => direction,
-        Err(_) => return Ok(None),
-    };
-    Ok(Some(
-        configured_dggs(north_square, south_square)
-            .planar_neighbor(&cell, direction)
-            .to_string(),
-    ))
+    let dggs = configured_dggs(north_square, south_square);
+    if plane {
+        let direction = match Direction::from_str(direction) {
+            Ok(direction) => direction,
+            Err(_) => return Ok(None),
+        };
+        Ok(Some(dggs.planar_neighbor(&cell, direction).to_string()))
+    } else {
+        let direction = match EllipsoidalDirection::from_str(direction) {
+            Ok(direction) => direction,
+            Err(_) => return Ok(None),
+        };
+        dggs.ellipsoidal_neighbor(&cell, direction)
+            .map(|neighbour| neighbour.map(|value| value.to_string()))
+            .map_err(value_error)
+    }
+}
+
+/// Compatibility-facade neighbours with configurable polar squares.
+#[pyfunction(name = "_cell_neighbors", signature = (cell, plane=true, north_square=0, south_square=0))]
+fn compat_cell_neighbors(
+    cell: &str,
+    plane: bool,
+    north_square: u8,
+    south_square: u8,
+) -> PyResult<Vec<(String, String)>> {
+    let cell = parse_cell(cell)?;
+    configured_neighbor_pairs(&configured_dggs(north_square, south_square), &cell, plane)
 }
 
 /// Compatibility-facade cell width or area.
@@ -335,6 +390,7 @@ fn _rhealpixdggs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(compat_cell_nucleus, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_vertices, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_neighbor, module)?)?;
+    module.add_function(wrap_pyfunction!(compat_cell_neighbors, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_metric, module)?)?;
     module.add("MAX_RESOLUTION", MAX_RESOLUTION)?;
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;

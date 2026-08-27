@@ -44,7 +44,10 @@ Region and ellipsoidal-shape classification live on `CellId` because they are
 pure functions of the face and aperture-9 child digits. Neighbour traversal
 lives on `RhealpixDggs` because polar-square placement changes resolution-zero
 face adjacency. Geographic vertex ordering likewise belongs to the DGGS: polar
-skew quadrilaterals and darts require projection-triangle context.
+skew quadrilaterals and darts require projection-triangle context. Geographic
+neighbour names are derived from neighbour nuclei; circular longitude offsets
+relative to the source-cell nucleus avoid antimeridian special cases and
+mutable prime-meridian state.
 
 ## Correctness strategy
 

@@ -1,6 +1,8 @@
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
-use crate::cell::{CellId, CellShape, Direction, Face, Region, validate_resolution};
+use crate::cell::{
+    CellId, CellShape, Direction, EllipsoidalDirection, Face, Region, validate_resolution,
+};
 use crate::ellipsoid::Ellipsoid;
 use crate::error::{Error, Result};
 use crate::projection;
@@ -212,6 +214,99 @@ impl RhealpixDggs {
         neighbor.rotated(turns)
     }
 
+    /// Return all four edge neighbours using geographic direction names.
+    ///
+    /// Direction names match `Cell.neighbors(plane=False)` in
+    /// `rhealpixdggs-py`. Quadrilaterals use north/south/east/west, darts use
+    /// two diagonal names, and caps use longitude-ordered indexed names.
+    pub fn ellipsoidal_neighbors(
+        &self,
+        cell: &CellId,
+    ) -> Result<Vec<(EllipsoidalDirection, CellId)>> {
+        let planar = Direction::ALL.map(|direction| self.planar_neighbor(cell, direction));
+        match cell.shape() {
+            CellShape::Quad => Ok(vec![
+                (EllipsoidalDirection::North, planar[3].clone()),
+                (EllipsoidalDirection::South, planar[2].clone()),
+                (EllipsoidalDirection::West, planar[0].clone()),
+                (EllipsoidalDirection::East, planar[1].clone()),
+            ]),
+            CellShape::Cap => {
+                let mut neighbours = self.neighbor_nuclei(planar, None)?;
+                neighbours.sort_by(|left, right| left.0.total_cmp(&right.0));
+                Ok(neighbours
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, (_, _, neighbour))| {
+                        let direction = match cell.region() {
+                            Region::NorthPolar => EllipsoidalDirection::SouthIndexed(index as u8),
+                            Region::SouthPolar => EllipsoidalDirection::NorthIndexed(index as u8),
+                            Region::Equatorial => unreachable!("cap cells are polar"),
+                        };
+                        (direction, neighbour)
+                    })
+                    .collect())
+            }
+            CellShape::SkewQuad => {
+                let origin = self.cell_to_lonlat(cell)?.0;
+                let mut neighbours = self.neighbor_nuclei(planar, Some(origin))?;
+
+                let north_index = index_of_maximum(&neighbours, |entry| entry.1);
+                let north = neighbours.remove(north_index).2;
+                let south_index = index_of_minimum(&neighbours, |entry| entry.1);
+                let south = neighbours.remove(south_index).2;
+                let east_index = index_of_maximum(&neighbours, |entry| entry.0);
+                let east = neighbours[east_index].2.clone();
+                let west_index = index_of_minimum(&neighbours, |entry| entry.0);
+                let west = neighbours[west_index].2.clone();
+
+                Ok(vec![
+                    (EllipsoidalDirection::North, north),
+                    (EllipsoidalDirection::South, south),
+                    (EllipsoidalDirection::East, east),
+                    (EllipsoidalDirection::West, west),
+                ])
+            }
+            CellShape::Dart => {
+                let origin = self.cell_to_lonlat(cell)?.0;
+                let mut neighbours = self.neighbor_nuclei(planar, Some(origin))?;
+                neighbours.sort_by(|left, right| left.0.total_cmp(&right.0));
+                let cells: Vec<_> = neighbours
+                    .into_iter()
+                    .map(|(_, _, neighbour)| neighbour)
+                    .collect();
+                Ok(match cell.region() {
+                    Region::NorthPolar => vec![
+                        (EllipsoidalDirection::West, cells[0].clone()),
+                        (EllipsoidalDirection::SouthWest, cells[1].clone()),
+                        (EllipsoidalDirection::SouthEast, cells[2].clone()),
+                        (EllipsoidalDirection::East, cells[3].clone()),
+                    ],
+                    Region::SouthPolar => vec![
+                        (EllipsoidalDirection::West, cells[0].clone()),
+                        (EllipsoidalDirection::NorthWest, cells[1].clone()),
+                        (EllipsoidalDirection::NorthEast, cells[2].clone()),
+                        (EllipsoidalDirection::East, cells[3].clone()),
+                    ],
+                    Region::Equatorial => unreachable!("dart cells are polar"),
+                })
+            }
+        }
+    }
+
+    /// Return one edge neighbour by geographic direction, or `None` when the
+    /// direction name is not applicable to this cell's ellipsoidal shape.
+    pub fn ellipsoidal_neighbor(
+        &self,
+        cell: &CellId,
+        direction: EllipsoidalDirection,
+    ) -> Result<Option<CellId>> {
+        Ok(self
+            .ellipsoidal_neighbors(cell)?
+            .into_iter()
+            .find_map(|(candidate, neighbour)| (candidate == direction).then_some(neighbour)))
+    }
+
     /// Return planar cell width in metres.
     pub fn cell_width(&self, resolution: u8) -> Result<f64> {
         validate_resolution(resolution)?;
@@ -311,6 +406,22 @@ impl RhealpixDggs {
         }
     }
 
+    fn neighbor_nuclei(
+        &self,
+        neighbours: [CellId; 4],
+        relative_to_longitude: Option<f64>,
+    ) -> Result<Vec<(f64, f64, CellId)>> {
+        neighbours
+            .into_iter()
+            .map(|neighbour| {
+                let (longitude, latitude) = self.cell_to_lonlat(&neighbour)?;
+                let longitude = relative_to_longitude
+                    .map_or(longitude, |origin| longitude_delta(longitude, origin));
+                Ok((longitude, latitude, neighbour))
+            })
+            .collect()
+    }
+
     fn root_neighbor(&self, face: Face, direction: Direction) -> Face {
         match face {
             Face::O | Face::P | Face::Q | Face::R => match direction {
@@ -406,6 +517,36 @@ const fn digit_neighbor(digit: u8, direction: Direction) -> u8 {
         Direction::Up => ((digit / 3 + 2) % 3) * 3 + digit % 3,
         Direction::Down => ((digit / 3 + 1) % 3) * 3 + digit % 3,
     }
+}
+
+fn longitude_delta(longitude: f64, origin: f64) -> f64 {
+    (longitude - origin + 180.0).rem_euclid(360.0) - 180.0
+}
+
+fn index_of_maximum<T, F>(values: &[T], key: F) -> usize
+where
+    F: Fn(&T) -> f64,
+{
+    let mut result = 0;
+    for index in 1..values.len() {
+        if key(&values[index]) > key(&values[result]) {
+            result = index;
+        }
+    }
+    result
+}
+
+fn index_of_minimum<T, F>(values: &[T], key: F) -> usize
+where
+    F: Fn(&T) -> f64,
+{
+    let mut result = 0;
+    for index in 1..values.len() {
+        if key(&values[index]) < key(&values[result]) {
+            result = index;
+        }
+    }
+    result
 }
 
 impl Default for RhealpixDggs {
@@ -532,6 +673,129 @@ mod tests {
                 Direction::ALL.map(|direction| dggs.planar_neighbor(&cell, direction).to_string());
             assert_eq!(actual, expected, "{identifier}");
         }
+    }
+
+    #[test]
+    fn ellipsoidal_neighbors_match_every_upstream_shape() {
+        let dggs = RhealpixDggs::wgs84_003();
+        let cases: [(&str, [(&str, &str); 4]); 8] = [
+            (
+                "P2",
+                [
+                    ("north", "N2"),
+                    ("south", "P5"),
+                    ("west", "P1"),
+                    ("east", "Q0"),
+                ],
+            ),
+            (
+                "N",
+                [
+                    ("south_0", "O"),
+                    ("south_1", "P"),
+                    ("south_2", "Q"),
+                    ("south_3", "R"),
+                ],
+            ),
+            (
+                "S4",
+                [
+                    ("north_0", "S1"),
+                    ("north_1", "S5"),
+                    ("north_2", "S7"),
+                    ("north_3", "S3"),
+                ],
+            ),
+            (
+                "N0",
+                [
+                    ("west", "N1"),
+                    ("south_west", "Q2"),
+                    ("south_east", "R0"),
+                    ("east", "N3"),
+                ],
+            ),
+            (
+                "S0",
+                [
+                    ("west", "S3"),
+                    ("north_west", "R8"),
+                    ("north_east", "O6"),
+                    ("east", "S1"),
+                ],
+            ),
+            (
+                "N43",
+                [
+                    ("north", "N44"),
+                    ("south", "N35"),
+                    ("east", "N46"),
+                    ("west", "N40"),
+                ],
+            ),
+            (
+                "S43",
+                [
+                    ("north", "S35"),
+                    ("south", "S44"),
+                    ("east", "S40"),
+                    ("west", "S46"),
+                ],
+            ),
+            (
+                "N62",
+                [
+                    ("west", "N38"),
+                    ("south_west", "N61"),
+                    ("south_east", "N65"),
+                    ("east", "N70"),
+                ],
+            ),
+        ];
+
+        for (identifier, expected) in cases {
+            let cell: CellId = identifier.parse().unwrap();
+            let actual: Vec<_> = dggs
+                .ellipsoidal_neighbors(&cell)
+                .unwrap()
+                .into_iter()
+                .map(|(direction, neighbour)| (direction.to_string(), neighbour.to_string()))
+                .collect();
+            let expected: Vec<_> = expected
+                .into_iter()
+                .map(|(direction, neighbour)| (direction.to_owned(), neighbour.to_owned()))
+                .collect();
+            assert_eq!(actual, expected, "{identifier}");
+        }
+    }
+
+    #[test]
+    fn ellipsoidal_neighbors_respect_custom_polar_square_positions() {
+        let dggs = RhealpixDggs::new(Ellipsoid::wgs84(), 1, 3);
+        let cell: CellId = "N0".parse().unwrap();
+        let actual: Vec<_> = dggs
+            .ellipsoidal_neighbors(&cell)
+            .unwrap()
+            .into_iter()
+            .map(|(direction, neighbour)| (direction.to_string(), neighbour.to_string()))
+            .collect();
+        assert_eq!(
+            actual,
+            [
+                ("west".to_owned(), "N1".to_owned()),
+                ("south_west".to_owned(), "R2".to_owned()),
+                ("south_east".to_owned(), "O0".to_owned()),
+                ("east".to_owned(), "N3".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn invalid_ellipsoidal_direction_for_shape_returns_none() {
+        let dggs = RhealpixDggs::wgs84_003();
+        let cell: CellId = "P2".parse().unwrap();
+        let direction: EllipsoidalDirection = "north_west".parse().unwrap();
+        assert_eq!(dggs.ellipsoidal_neighbor(&cell, direction).unwrap(), None);
     }
 
     #[test]

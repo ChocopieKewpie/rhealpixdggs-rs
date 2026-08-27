@@ -32,6 +32,10 @@ fn benchmarks(criterion: &mut Criterion) {
         bench.iter(|| dggs.planar_neighbor(black_box(&polar_cell), black_box(Direction::Up)));
     });
 
+    criterion.bench_function("ellipsoidal_neighbors_polar_r12", |bench| {
+        bench.iter(|| dggs.ellipsoidal_neighbors(black_box(&polar_cell)).unwrap());
+    });
+
     criterion.bench_function("shape_classification_r12", |bench| {
         bench.iter(|| black_box(&polar_cell).shape());
     });

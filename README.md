@@ -4,9 +4,9 @@ A Rust-first implementation of the aperture-9 rHEALPix Discrete Global Grid
 System, with Python as the first supported language binding.
 
 > **Status: early alpha.** Point indexing, projection, shape-aware vertices,
-> planar neighbours, hierarchy operations, equal-area metrics, stable integer
-> IDs, and an initial upstream object facade are implemented. This is not yet a
-> drop-in replacement for every geometry operation in
+> planar and ellipsoidal neighbours, hierarchy operations, equal-area metrics,
+> stable integer IDs, and an initial upstream object facade are implemented.
+> This is not yet a drop-in replacement for every geometry operation in
 > [`rhealpixdggs-py`](https://github.com/manaakiwhenua/rhealpixdggs-py).
 
 ## Why this layout
@@ -44,6 +44,7 @@ lat, lng = rh.cell_to_latlng(cell)
 boundary = rh.cell_to_boundary(cell)
 children = rh.cell_to_children(cell)
 neighbors = rh.cell_to_neighbors(cell)
+geographic_neighbors = rh.cell_to_neighbors(cell, plane=False)
 
 integer_id = rh.str_to_int(cell)
 assert rh.int_to_str(integer_id) == cell
@@ -65,9 +66,9 @@ vertices = cell.vertices(plane=False, trim_dart=True)
 ```
 
 The facade currently supports aperture 9 on WGS84, configurable polar-square
-positions, point indexing, nuclei, vertices, planar neighbours, hierarchy
-expansion, and cell metrics. Alternate ellipsoids, alternate apertures, and
-ellipsoidal direction names remain on the roadmap.
+positions, point indexing, nuclei, vertices, planar and ellipsoidal neighbours,
+hierarchy expansion, and cell metrics. Alternate ellipsoids, alternate
+apertures, and densified boundaries remain on the roadmap.
 
 ## Initial performance
 
@@ -98,12 +99,12 @@ let (longitude, latitude) = dggs.cell_to_lonlat(&cell)?;
 | Cell → projected/geographic nucleus | Yes | Yes | Golden-tested |
 | Shape classification and geographic vertices | Yes | Yes | Golden-tested, including dart trimming |
 | Planar edge neighbours | Yes | Yes | Golden-tested, including polar rotations |
+| Ellipsoidal edge neighbours | Yes | Yes | Exhaustively differential-tested through resolution 3 |
 | Parent, children, descendants | Yes | Yes | Yes |
 | Recursive compact/uncompact | Yes | Yes | Yes |
 | String ↔ stable `u64` | Yes | Yes | New API |
 | Equal-area cell metric | Yes | Yes | Golden-tested |
 | `RHEALPixDGGS` / `Cell` object facade | — | Partial | Core migration calls supported |
-| Ellipsoidal neighbour direction names | Planned | Planned | No |
 | Lines, polygons, and region filling | Planned | Planned | No |
 | Custom aperture / `N_side` | Planned decision | — | No |
 
@@ -138,6 +139,7 @@ being expanded incrementally as matching core semantics land.
 
 ## Licence and attribution
 
-MIT. Projection and indexing mathematics were ported from
+MIT. The Rust implementation is maintained by James Ardo and contributors.
+Projection and indexing mathematics were ported from
 `manaakiwhenua/rhealpixdggs-py` under its MIT licence option. See
 [LICENSE](LICENSE) and [NOTICE](NOTICE).

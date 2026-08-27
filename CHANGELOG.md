@@ -7,9 +7,13 @@
   trimming.
 - Added planar edge neighbours with polar-face rotations and configurable
   north/south square positions.
+- Added ellipsoidal edge-neighbour direction semantics for quads, caps, darts,
+  and skew quads.
 - Added H3-style Python neighbour and shape helpers.
 - Added an initial upstream-style Python `RHEALPixDGGS`, `Cell`, and
   `WGS84_003` compatibility facade.
+- Updated package authorship to James Ardo and repository metadata to
+  `ChocopieKewpie/rhealpixdggs-rs`.
 
 ## 0.1.0-alpha.1
 

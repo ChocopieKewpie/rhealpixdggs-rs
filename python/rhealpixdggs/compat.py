@@ -16,6 +16,7 @@ from ._rhealpixdggs import (
     _cell_from_point,
     _cell_metric,
     _cell_neighbor,
+    _cell_neighbors,
     _cell_nucleus,
     _cell_vertices,
     get_cell_shape,
@@ -188,23 +189,30 @@ class Cell:
         )
 
     def neighbor(self, direction: str, plane: bool = True) -> Cell | None:
-        if not plane:
-            raise NotImplementedError("ellipsoidal direction names are not implemented yet")
         identifier = _cell_neighbor(
             self._identifier,
             direction,
+            plane,
             self.north_square,
             self.south_square,
         )
         return None if identifier is None else Cell(self.rdggs, identifier)
 
     def neighbors(self, plane: bool = True) -> dict[str, Cell]:
-        if not plane:
-            raise NotImplementedError("ellipsoidal direction names are not implemented yet")
+        if plane:
+            return {
+                direction: neighbor
+                for direction in _PLANAR_DIRECTIONS
+                if (neighbor := self.neighbor(direction, plane=True)) is not None
+            }
         return {
-            direction: neighbor
-            for direction in _PLANAR_DIRECTIONS
-            if (neighbor := self.neighbor(direction, plane=True)) is not None
+            direction: Cell(self.rdggs, identifier)
+            for direction, identifier in _cell_neighbors(
+                self._identifier,
+                False,
+                self.north_square,
+                self.south_square,
+            )
         }
 
     def subcells(self, resolution: int | None = None) -> Iterator[Cell]:

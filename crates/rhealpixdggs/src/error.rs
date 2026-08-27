@@ -25,6 +25,8 @@ pub enum Error {
     InvalidCoordinate(String),
     /// A planar direction name was not one of left, right, down, or up.
     InvalidDirection(String),
+    /// A geographic direction name is not valid for an ellipsoidal cell.
+    InvalidEllipsoidalDirection(String),
     /// Projected input does not lie inside the rHEALPix image.
     OutsideProjection,
     /// A bulk expansion would allocate an unreasonable number of cells.
@@ -53,6 +55,9 @@ impl fmt::Display for Error {
                 f,
                 "invalid planar direction {value:?}; expected left, right, down, or up"
             ),
+            Self::InvalidEllipsoidalDirection(value) => {
+                write!(f, "invalid ellipsoidal neighbour direction {value:?}")
+            }
             Self::OutsideProjection => write!(f, "point lies outside the rHEALPix image"),
             Self::ExpansionTooLarge(count) => write!(
                 f,

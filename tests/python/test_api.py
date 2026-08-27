@@ -84,6 +84,46 @@ def test_planar_neighbors_include_polar_rotations() -> None:
         rh.cell_to_neighbor("N0", "north")
 
 
+@pytest.mark.parametrize(
+    ("cell", "expected"),
+    [
+        (
+            "P2",
+            {"north": "N2", "south": "P5", "west": "P1", "east": "Q0"},
+        ),
+        (
+            "N",
+            {"south_0": "O", "south_1": "P", "south_2": "Q", "south_3": "R"},
+        ),
+        (
+            "N0",
+            {
+                "west": "N1",
+                "south_west": "Q2",
+                "south_east": "R0",
+                "east": "N3",
+            },
+        ),
+        (
+            "S43",
+            {"north": "S35", "south": "S44", "east": "S40", "west": "S46"},
+        ),
+    ],
+)
+def test_ellipsoidal_neighbors_match_upstream(
+    cell: str, expected: dict[str, str]
+) -> None:
+    assert rh.cell_to_neighbors(cell, plane=False) == expected
+    for direction, neighbour in expected.items():
+        assert rh.cell_to_neighbor(cell, direction, plane=False) == neighbour
+
+
+def test_ellipsoidal_direction_validation() -> None:
+    assert rh.cell_to_neighbor("P2", "north_west", plane=False) is None
+    with pytest.raises(ValueError):
+        rh.cell_to_neighbor("P2", "left", plane=False)
+
+
 def test_geographic_vertex_order_and_dart_trimming() -> None:
     boundary = rh.cell_to_boundary("N0")
     assert len(boundary) == 4
@@ -130,5 +170,26 @@ def test_facade_respects_custom_polar_square_positions_and_metrics() -> None:
     assert math.isclose(cell.area(plane=True), cell.width() ** 2)
     assert math.isclose(cell.area(plane=False), rh.cell_area("P57"))
     assert cell.width(plane=False) is None
-    with pytest.raises(NotImplementedError):
-        cell.neighbors(plane=False)
+    ellipsoidal_neighbors = dggs.cell("N0").neighbors(plane=False)
+    assert list(ellipsoidal_neighbors) == [
+        "west",
+        "south_west",
+        "south_east",
+        "east",
+    ]
+    assert {
+        direction: str(neighbour)
+        for direction, neighbour in ellipsoidal_neighbors.items()
+    } == {
+        "west": "N1",
+        "south_west": "R2",
+        "south_east": "O0",
+        "east": "N3",
+    }
+    assert str(dggs.cell("S0").neighbor("north_east", plane=False)) == "R6"
+    assert list(rh.WGS84_003.cell("N").neighbors(plane=False)) == [
+        "south_0",
+        "south_1",
+        "south_2",
+        "south_3",
+    ]

@@ -21,7 +21,7 @@ other languages.
 - [x] Geographic vertex ordering and optional dart trimming
 - [ ] Densified geographic boundaries with an explicit point-count contract
 - [x] Planar edge neighbours, including polar rotations
-- [ ] Ellipsoidal edge-neighbour direction names
+- [x] Ellipsoidal edge-neighbour direction names
 - [ ] Cell ordering, predecessor/successor, and level/post-order indices
 - [ ] Region, line, and polygon coverage without requiring geometry types in core
 - [x] Initial Python `RHEALPixDGGS` and `Cell` compatibility facade
