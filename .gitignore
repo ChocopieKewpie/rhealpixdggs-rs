@@ -1,0 +1,13 @@
+/target/
+/.venv/
+/.pytest_cache/
+/.maturin/
+__pycache__/
+*.py[cod]
+*.so
+*.dylib
+*.dll
+*.pyd
+dist/
+build/
+

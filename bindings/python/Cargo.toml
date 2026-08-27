@@ -1,0 +1,22 @@
+[package]
+name = "rhealpixdggs-python"
+description = "Python bindings for rhealpixdggs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+name = "_rhealpixdggs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = "0.29.2"
+rhealpixdggs = { path = "../../crates/rhealpixdggs" }
+
+[lints]
+workspace = true
+

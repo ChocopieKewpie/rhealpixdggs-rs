@@ -1,0 +1,23 @@
+[package]
+name = "rhealpixdggs"
+description = "Fast, dependency-free rHEALPix discrete global grid indexing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+bench = false
+
+[dev-dependencies]
+criterion = "0.7"
+
+[[bench]]
+name = "indexing"
+harness = false
+
+[lints]
+workspace = true
+

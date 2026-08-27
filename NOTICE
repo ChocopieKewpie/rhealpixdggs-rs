@@ -1,0 +1,9 @@
+This project contains a clean Rust port of projection and indexing algorithms
+from rhealpixdggs-py:
+
+    https://github.com/manaakiwhenua/rhealpixdggs-py
+
+The upstream implementation is available under the MIT License or LGPL-3.0.
+This repository uses it under the MIT option. The original copyright notice is
+preserved in LICENSE.
+
