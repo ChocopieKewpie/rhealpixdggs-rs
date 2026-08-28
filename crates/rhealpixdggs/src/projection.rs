@@ -92,6 +92,23 @@ fn validate_lonlat(longitude: f64, latitude: f64) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn latitude_to_healpix_y(ellipsoid: Ellipsoid, latitude: f64) -> Result<f64> {
+    validate_lonlat(0.0, latitude)?;
+    let beta = authalic_latitude(latitude.to_radians(), ellipsoid.eccentricity());
+    Ok(healpix_sphere(0.0, beta).1 * ellipsoid.authalic_radius())
+}
+
+pub(crate) fn healpix_y_to_latitude(ellipsoid: Ellipsoid, y: f64) -> Result<f64> {
+    if !y.is_finite() {
+        return Err(Error::InvalidCoordinate(
+            "HEALPix y-coordinate must be finite".to_owned(),
+        ));
+    }
+    let radius = ellipsoid.authalic_radius();
+    let (_, beta) = healpix_sphere_inverse(FRAC_PI_4, y / radius)?;
+    Ok(common_latitude(beta, ellipsoid.eccentricity()).to_degrees())
+}
+
 fn wrap_longitude(longitude: f64) -> f64 {
     (longitude + PI).rem_euclid(2.0 * PI) - PI
 }

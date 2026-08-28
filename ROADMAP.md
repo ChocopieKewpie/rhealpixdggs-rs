@@ -23,7 +23,7 @@ other languages.
 - [x] Planar edge neighbours, including polar rotations
 - [x] Ellipsoidal edge-neighbour direction names
 - [x] Cell ordering, predecessor/successor, and level/post-order indices
-- [ ] Region, line, and polygon coverage without requiring geometry types in core
+- [x] Region, line, and polygon coverage without geometry types in core
 - [x] Initial Python `RHEALPixDGGS` and `Cell` compatibility facade
 - [ ] Complete facade parity for ordering, traversal, and geometry methods
 

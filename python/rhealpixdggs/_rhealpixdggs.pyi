@@ -8,6 +8,19 @@ def latlngs_to_cells(
     coordinates: Sequence[tuple[float, float]], resolution: int
 ) -> list[str]: ...
 def cell_to_latlng(cell: str) -> tuple[float, float]: ...
+def cell_to_centroid(cell: str) -> tuple[float, float]: ...
+def bbox_to_cells(
+    north: float, south: float, east: float, west: float, resolution: int
+) -> list[str]: ...
+def line_to_cells(
+    coordinates: Sequence[tuple[float, float]], resolution: int
+) -> list[str]: ...
+def polygon_to_cells(
+    exterior: Sequence[tuple[float, float]],
+    resolution: int,
+    holes: Sequence[Sequence[tuple[float, float]]] | None = None,
+    compact: bool = False,
+) -> list[str]: ...
 def cell_to_boundary(
     cell: str, trim_dart: bool = False
 ) -> list[tuple[float, float]]: ...
@@ -50,6 +63,28 @@ def _cell_nucleus(
     north_square: int = 0,
     south_square: int = 0,
 ) -> tuple[float, float]: ...
+def _cell_centroid(
+    cell: str,
+    plane: bool = True,
+    north_square: int = 0,
+    south_square: int = 0,
+) -> tuple[float, float]: ...
+def _cells_from_region(
+    resolution: int,
+    upper_left: tuple[float, float],
+    lower_right: tuple[float, float],
+    plane: bool = True,
+    north_square: int = 0,
+    south_square: int = 0,
+) -> list[list[str]]: ...
+def _cells_from_line(
+    resolution: int,
+    start: tuple[float, float],
+    end: tuple[float, float],
+    plane: bool = True,
+    north_square: int = 0,
+    south_square: int = 0,
+) -> list[str]: ...
 def _cell_vertices(
     cell: str,
     plane: bool = True,

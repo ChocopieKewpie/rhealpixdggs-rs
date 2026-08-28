@@ -5,6 +5,7 @@
 //! integer/string cell-ID model.
 
 mod cell;
+mod coverage;
 mod dggs;
 mod ellipsoid;
 mod error;

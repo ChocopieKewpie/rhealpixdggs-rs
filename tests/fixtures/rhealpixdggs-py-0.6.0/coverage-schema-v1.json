@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "rHEALPix coverage conformance corpus",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "corpus_version",
+    "upstream",
+    "contract",
+    "counts",
+    "point_edges",
+    "regions",
+    "lines",
+    "polygons"
+  ],
+  "properties": {
+    "$schema": { "const": "coverage-schema-v1.json" },
+    "schema_version": { "const": 1 },
+    "corpus_version": { "type": "string" },
+    "upstream": { "type": "object" },
+    "contract": { "type": "object" },
+    "counts": { "type": "object" },
+    "point_edges": { "type": "array" },
+    "regions": { "type": "array" },
+    "lines": { "type": "array" },
+    "polygons": { "type": "array" }
+  },
+  "additionalProperties": false
+}

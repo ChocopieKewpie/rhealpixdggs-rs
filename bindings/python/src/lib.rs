@@ -52,6 +52,87 @@ fn cell_to_latlng(cell: &str) -> PyResult<(f64, f64)> {
         .map_err(value_error)
 }
 
+/// Return an ellipsoidal cell centroid as `(latitude, longitude)` degrees.
+#[pyfunction]
+fn cell_to_centroid(cell: &str) -> PyResult<(f64, f64)> {
+    let cell = parse_cell(cell)?;
+    RhealpixDggs::wgs84_003()
+        .cell_centroid_lonlat(&cell)
+        .map(|(longitude, latitude)| (latitude, longitude))
+        .map_err(value_error)
+}
+
+/// Return cells covering a latitude/longitude bounding box.
+///
+/// Antimeridian-crossing boxes use `west > east` and are split automatically.
+#[pyfunction]
+fn bbox_to_cells(
+    north: f64,
+    south: f64,
+    east: f64,
+    west: f64,
+    resolution: u8,
+) -> PyResult<Vec<String>> {
+    let dggs = RhealpixDggs::wgs84_003();
+    let intervals = if west <= east {
+        vec![(west, east)]
+    } else {
+        vec![(west, 180.0), (-180.0, east)]
+    };
+    let mut cells = std::collections::BTreeSet::new();
+    for (interval_west, interval_east) in intervals {
+        for cell in dggs
+            .cells_from_region_lonlat(resolution, (interval_west, north), (interval_east, south))
+            .map_err(value_error)?
+            .into_iter()
+            .flatten()
+        {
+            cells.insert(cell);
+        }
+    }
+    Ok(cells.into_iter().map(|cell| cell.to_string()).collect())
+}
+
+/// Return cells touched by a latitude/longitude polyline in path order.
+#[pyfunction]
+fn line_to_cells(coordinates: Vec<(f64, f64)>, resolution: u8) -> PyResult<Vec<String>> {
+    let coordinates: Vec<_> = coordinates
+        .into_iter()
+        .map(|(latitude, longitude)| (longitude, latitude))
+        .collect();
+    RhealpixDggs::wgs84_003()
+        .cells_from_polyline_lonlat(resolution, &coordinates)
+        .map(|cells| cells.into_iter().map(|cell| cell.to_string()).collect())
+        .map_err(value_error)
+}
+
+/// Fill a latitude/longitude polygon using cell-centroid containment.
+#[pyfunction(signature = (exterior, resolution, holes=None, compact=false))]
+fn polygon_to_cells(
+    exterior: Vec<(f64, f64)>,
+    resolution: u8,
+    holes: Option<Vec<Vec<(f64, f64)>>>,
+    compact: bool,
+) -> PyResult<Vec<String>> {
+    let exterior: Vec<_> = exterior
+        .into_iter()
+        .map(|(latitude, longitude)| (longitude, latitude))
+        .collect();
+    let holes: Vec<Vec<_>> = holes
+        .unwrap_or_default()
+        .into_iter()
+        .map(|ring| {
+            ring.into_iter()
+                .map(|(latitude, longitude)| (longitude, latitude))
+                .collect()
+        })
+        .collect();
+    RhealpixDggs::wgs84_003()
+        .cells_from_polygon_lonlat(resolution, &exterior, &holes, compact)
+        .map(|cells| cells.into_iter().map(|cell| cell.to_string()).collect())
+        .map_err(value_error)
+}
+
 /// Return boundary points as `(latitude, longitude)` degrees.
 #[pyfunction(signature = (cell, trim_dart=false))]
 fn cell_to_boundary(cell: &str, trim_dart: bool) -> PyResult<Vec<(f64, f64)>> {
@@ -201,6 +282,66 @@ fn compat_cell_nucleus(
     } else {
         dggs.cell_to_lonlat(&cell).map_err(value_error)
     }
+}
+
+/// Compatibility-facade centroid with upstream coordinate ordering.
+#[pyfunction(name = "_cell_centroid", signature = (cell, plane=true, north_square=0, south_square=0))]
+fn compat_cell_centroid(
+    cell: &str,
+    plane: bool,
+    north_square: u8,
+    south_square: u8,
+) -> PyResult<(f64, f64)> {
+    let cell = parse_cell(cell)?;
+    let dggs = configured_dggs(north_square, south_square);
+    if plane {
+        dggs.cell_to_projected(&cell).map_err(value_error)
+    } else {
+        dggs.cell_centroid_lonlat(&cell).map_err(value_error)
+    }
+}
+
+/// Compatibility-facade rectangle coverage with upstream coordinate ordering.
+#[pyfunction(name = "_cells_from_region", signature = (resolution, upper_left, lower_right, plane=true, north_square=0, south_square=0))]
+fn compat_cells_from_region(
+    resolution: u8,
+    upper_left: (f64, f64),
+    lower_right: (f64, f64),
+    plane: bool,
+    north_square: u8,
+    south_square: u8,
+) -> PyResult<Vec<Vec<String>>> {
+    let dggs = configured_dggs(north_square, south_square);
+    let rows = if plane {
+        dggs.cells_from_region_projected(resolution, upper_left, lower_right)
+    } else {
+        dggs.cells_from_region_lonlat(resolution, upper_left, lower_right)
+    }
+    .map_err(value_error)?;
+    Ok(rows
+        .into_iter()
+        .map(|row| row.into_iter().map(|cell| cell.to_string()).collect())
+        .collect())
+}
+
+/// Compatibility-facade two-point line coverage with upstream ordering.
+#[pyfunction(name = "_cells_from_line", signature = (resolution, start, end, plane=true, north_square=0, south_square=0))]
+fn compat_cells_from_line(
+    resolution: u8,
+    start: (f64, f64),
+    end: (f64, f64),
+    plane: bool,
+    north_square: u8,
+    south_square: u8,
+) -> PyResult<Vec<String>> {
+    let dggs = configured_dggs(north_square, south_square);
+    let cells = if plane {
+        dggs.cells_from_polyline_projected(resolution, &[start, end])
+    } else {
+        dggs.cells_from_polyline_lonlat(resolution, &[start, end])
+    }
+    .map_err(value_error)?;
+    Ok(cells.into_iter().map(|cell| cell.to_string()).collect())
 }
 
 /// Compatibility-facade vertices with upstream coordinate ordering.
@@ -475,6 +616,10 @@ fn _rhealpixdggs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(latlng_to_cell, module)?)?;
     module.add_function(wrap_pyfunction!(latlngs_to_cells, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_latlng, module)?)?;
+    module.add_function(wrap_pyfunction!(cell_to_centroid, module)?)?;
+    module.add_function(wrap_pyfunction!(bbox_to_cells, module)?)?;
+    module.add_function(wrap_pyfunction!(line_to_cells, module)?)?;
+    module.add_function(wrap_pyfunction!(polygon_to_cells, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_boundary, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_boundary_densified, module)?)?;
     module.add_function(wrap_pyfunction!(get_cell_region, module)?)?;
@@ -499,6 +644,9 @@ fn _rhealpixdggs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(uncompact_cells, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_from_point, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_nucleus, module)?)?;
+    module.add_function(wrap_pyfunction!(compat_cell_centroid, module)?)?;
+    module.add_function(wrap_pyfunction!(compat_cells_from_region, module)?)?;
+    module.add_function(wrap_pyfunction!(compat_cells_from_line, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_vertices, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_boundary, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_neighbor, module)?)?;

@@ -119,8 +119,8 @@ impl RhealpixDggs {
         let dx = ((x - upper_left_x).abs() / root_width).clamp(0.0, 1.0);
         let dy = ((y - upper_left_y).abs() / root_width).clamp(0.0, 1.0);
         let scale = N_SIDE.pow(u32::from(resolution));
-        let column = ((dx * scale as f64).floor() as u64).min(scale - 1);
-        let row = ((dy * scale as f64).floor() as u64).min(scale - 1);
+        let column = stable_grid_index(dx, scale);
+        let row = stable_grid_index(dy, scale);
 
         let mut digits = Vec::with_capacity(usize::from(resolution));
         for position in 0..resolution {
@@ -608,6 +608,18 @@ fn longitude_delta(longitude: f64, origin: f64) -> f64 {
     (longitude - origin + 180.0).rem_euclid(360.0) - 180.0
 }
 
+fn stable_grid_index(fraction: f64, scale: u64) -> u64 {
+    let scaled = fraction * scale as f64;
+    let nearest = scaled.round();
+    let tolerance = 16.0 * f64::EPSILON * scale as f64;
+    let stable = if (scaled - nearest).abs() <= tolerance {
+        nearest
+    } else {
+        scaled
+    };
+    (stable.floor() as u64).min(scale - 1)
+}
+
 fn boundary_point_count(points_per_edge: usize) -> Result<usize> {
     if points_per_edge < 2 {
         return Err(Error::InvalidBoundaryPointCount(points_per_edge));
@@ -730,6 +742,23 @@ mod tests {
             (120.0, -89.0, 15, "S444375206675068"),
         ];
         for (longitude, latitude, resolution, expected) in cases {
+            assert_eq!(
+                dggs.cell_from_lonlat(longitude, latitude, resolution)
+                    .unwrap()
+                    .to_string(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn exact_cell_edges_use_upstream_tie_breaking() {
+        let dggs = RhealpixDggs::wgs84_003();
+        for (longitude, latitude, resolution, expected) in [
+            (10.0, -20.0, 3, "Q616"),
+            (10.0, 20.0, 3, "Q070"),
+            (20.0, 10.0, 3, "Q320"),
+        ] {
             assert_eq!(
                 dggs.cell_from_lonlat(longitude, latitude, resolution)
                     .unwrap()

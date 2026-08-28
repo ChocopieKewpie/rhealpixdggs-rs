@@ -30,6 +30,8 @@ pub enum Error {
     },
     /// Geographic input was non-finite or outside its valid range.
     InvalidCoordinate(String),
+    /// A line, polygon, or polygon hole is malformed.
+    InvalidGeometry(String),
     /// A planar direction name was not one of left, right, down, or up.
     InvalidDirection(String),
     /// A geographic direction name is not valid for an ellipsoidal cell.
@@ -65,6 +67,7 @@ impl fmt::Display for Error {
                 "descendant resolution {requested} is coarser than cell resolution {cell}"
             ),
             Self::InvalidCoordinate(message) => write!(f, "invalid coordinate: {message}"),
+            Self::InvalidGeometry(message) => write!(f, "invalid geometry: {message}"),
             Self::InvalidDirection(value) => write!(
                 f,
                 "invalid planar direction {value:?}; expected left, right, down, or up"

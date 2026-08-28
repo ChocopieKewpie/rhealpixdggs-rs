@@ -16,12 +16,15 @@ from ._rhealpixdggs import (
     MAX_RESOLUTION,
     _compare_cells,
     _cell_boundary,
+    _cell_centroid,
     _cell_from_point,
     _cell_metric,
     _cell_neighbor,
     _cell_neighbors,
     _cell_nucleus,
     _cell_vertices,
+    _cells_from_line,
+    _cells_from_region,
     cell_to_level_order_index,
     cell_to_post_order_index,
     cell_to_predecessor,
@@ -123,6 +126,46 @@ class RHEALPixDGGS:
         )
         return None if identifier is None else Cell(self, identifier)
 
+    def cells_from_region(
+        self,
+        resolution: int,
+        upper_left: tuple[float, float],
+        lower_right: tuple[float, float],
+        plane: bool = True,
+    ) -> list[list[Cell]]:
+        """Return cells covering an axis-aligned region in upstream order."""
+        return [
+            [Cell(self, identifier) for identifier in row]
+            for row in _cells_from_region(
+                resolution,
+                upper_left,
+                lower_right,
+                plane,
+                self.north_square,
+                self.south_square,
+            )
+        ]
+
+    def cells_from_line(
+        self,
+        resolution: int,
+        start: tuple[float, float],
+        end: tuple[float, float],
+        plane: bool = True,
+    ) -> list[Cell]:
+        """Return cells touched by a two-point line in path order."""
+        return [
+            Cell(self, identifier)
+            for identifier in _cells_from_line(
+                resolution,
+                start,
+                end,
+                plane,
+                self.north_square,
+                self.south_square,
+            )
+        ]
+
     def grid(self, resolution: int) -> Iterator[Cell]:
         if not 0 <= resolution <= MAX_RESOLUTION:
             raise ValueError(f"resolution must be in [0, {MAX_RESOLUTION}]")
@@ -205,6 +248,15 @@ class Cell:
 
     def nucleus(self, plane: bool = True) -> tuple[float, float]:
         return _cell_nucleus(
+            self._identifier,
+            plane,
+            self.north_square,
+            self.south_square,
+        )
+
+    def centroid(self, plane: bool = True) -> tuple[float, float]:
+        """Return the planar or ellipsoidal centroid of this cell."""
+        return _cell_centroid(
             self._identifier,
             plane,
             self.north_square,

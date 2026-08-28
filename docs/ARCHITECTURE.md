@@ -54,6 +54,20 @@ neighbour names are derived from neighbour nuclei; circular longitude offsets
 relative to the source-cell nucleus avoid antimeridian special cases and
 mutable prime-meridian state.
 
+## Geometry coverage
+
+Coverage accepts ordinary coordinate slices rather than GEOS, Shapely, or
+`geo` objects. Rectangle scans preserve upstream row ordering. Polyline cover
+returns every touched cell in path order, and polygon cover uses strict cell-
+centroid containment with optional holes and recursive compaction. Geographic
+longitudes are unwrapped internally, so antimeridian-crossing lines and rings
+take the short path. Polar caps are tested as latitude-bounded regions instead
+of being forced into invalid longitude polygons.
+
+This boundary keeps the core reusable from any language. Bindings can add
+GeoJSON, Shapely, or ecosystem-specific adapters without making those object
+models part of the grid algorithm.
+
 ## Correctness strategy
 
 1. Small unit tests cover algebraic invariants and projection round trips.

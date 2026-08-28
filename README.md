@@ -5,8 +5,9 @@ System, with Python as the first supported language binding.
 
 > **Status: early alpha.** Point indexing, projection, shape-aware vertices,
 > exact densified boundaries, planar and ellipsoidal neighbours, hierarchy
-> traversal and ordering, equal-area metrics, stable integer IDs, and an
-> initial upstream object facade are implemented.
+> traversal and ordering, equal-area metrics, stable integer IDs, dependency-
+> free rectangle/line/polygon coverage, and an initial upstream object facade
+> are implemented.
 > This is not yet a drop-in replacement for every geometry operation in
 > [`rhealpixdggs-py`](https://github.com/manaakiwhenua/rhealpixdggs-py).
 
@@ -51,6 +52,13 @@ children = rh.cell_to_children(cell)
 neighbors = rh.cell_to_neighbors(cell)
 geographic_neighbors = rh.cell_to_neighbors(cell, plane=False)
 
+line_cells = rh.line_to_cells([(-40.356, 175.611), (-40.35, 175.62)], 12)
+polygon_cells = rh.polygon_to_cells(
+    [(-40.36, 175.60), (-40.34, 175.60), (-40.34, 175.63), (-40.36, 175.63)],
+    12,
+    compact=True,
+)
+
 integer_id = rh.str_to_int(cell)
 assert rh.int_to_str(integer_id) == cell
 
@@ -75,12 +83,16 @@ vertices = cell.vertices(plane=False, trim_dart=True)
 boundary = cell.boundary(n=16, plane=False)
 assert WGS84_003.cell(post_order_index=cell.index("post")) == cell
 next_cell = cell.successor()
+region = WGS84_003.cells_from_region(
+    3, (170.0, -35.0), (176.0, -42.0), plane=False
+)
 ```
 
 The facade currently supports aperture 9 on WGS84, configurable polar-square
 positions, point indexing, nuclei, vertices, planar and ellipsoidal neighbours,
 densified boundaries, ordering and traversal, hierarchy expansion, and cell
-metrics. Alternate ellipsoids and alternate apertures remain on the roadmap.
+metrics. Region and line coverage are also available through the facade.
+Alternate ellipsoids and alternate apertures remain on the roadmap.
 
 The new functional `cell_to_boundary_densified` call has an exact contract for
 every shape: `points_per_edge >= 2` and `4 * points_per_edge - 4` returned
@@ -115,6 +127,7 @@ let (longitude, latitude) = dggs.cell_to_lonlat(&cell)?;
 |---|---:|---:|---:|
 | WGS84_003 point → cell | Yes | Yes | Golden-tested |
 | Cell → projected/geographic nucleus | Yes | Yes | Golden-tested |
+| Ellipsoidal cell centroid | Yes | Yes | Upstream-compatible quadrature |
 | Shape classification and geographic vertices | Yes | Yes | Golden-tested, including dart trimming |
 | Exact densified projected/geographic boundaries | Yes | Yes | Differential-tested across shapes and polar layouts |
 | Planar edge neighbours | Yes | Yes | Golden-tested, including polar rotations |
@@ -126,8 +139,8 @@ let (longitude, latitude) = dggs.cell_to_lonlat(&cell)?;
 | String ↔ stable level-order `u64` | Yes | Yes | New API |
 | Equal-area cell metric | Yes | Yes | Golden-tested |
 | Versioned upstream conformance corpus | Yes | Yes | 1,583 shared cases from upstream 0.6.0 |
+| Rectangle, polyline, and polygon coverage | Yes | Yes | Shared upstream corpus plus antimeridian corrections |
 | `RHEALPixDGGS` / `Cell` object facade | — | Partial | Includes upstream boundary semantics |
-| Lines, polygons, and region filling | Planned | Planned | No |
 | Custom aperture / `N_side` | Planned decision | — | No |
 
 See [ROADMAP.md](ROADMAP.md) for the compatibility and performance sequence.
@@ -139,6 +152,8 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets
 cargo test -p rhealpixdggs
 cargo check -p rhealpixdggs-python
+python tools/generate_upstream_coverage_corpus.py \
+  --upstream-root ../upstream-src --check
 maturin develop
 pytest
 cargo bench -p rhealpixdggs
@@ -167,7 +182,9 @@ being expanded incrementally as matching core semantics land.
 Known upstream defects are corrected rather than reproduced: resolution-zero
 level indices are `0..=5` and round-trip correctly, and successor traversal
 past terminal cell `S` returns `None` at finer resolutions instead of raising
-an internal `AttributeError`.
+an internal `AttributeError`. Coverage also unwraps antimeridian-crossing lines
+and polygons and explicitly handles polar cap cells, both known limitations in
+the upstream line implementation.
 
 ## Licence and attribution
 

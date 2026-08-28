@@ -14,6 +14,12 @@ The corpus contains:
 - 15 hierarchy/traversal cases and a mixed-resolution post-order sequence;
 - cell width and projected/ellipsoidal area through resolution 15.
 
+`coverage-v1.json` extends that immutable base contract with generated region,
+line, polygon, and exact cell-edge cases. Both the Rust integration suite and
+Python suite consume it. Polygon cases reproduce upstream's strict ellipsoidal-
+centroid selection; antimeridian and polar-cap corrections are tested
+separately because upstream documents those line cases as unsupported.
+
 Geometry cases include nuclei, vertices, trimmed darts, ordinary and inset
 boundaries, and planar/geographic neighbours. The source methods are the same
 ones exercised by the upstream doctests; their names are recorded in the
@@ -43,6 +49,8 @@ still executes upstream's own `pj_healpix.py` and `pj_rhealpix.py` mathematics:
 python tools/generate_upstream_corpus.py \
   --upstream-root ../upstream-src \
   --minimal-dependency-stubs
+python tools/generate_upstream_coverage_corpus.py \
+  --upstream-root ../upstream-src
 ```
 
 The generator is deterministic and writes both the JSON fixture and its
