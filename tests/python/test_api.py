@@ -36,6 +36,40 @@ def test_hierarchy_and_compaction() -> None:
     assert rh.cell_to_parent("P8") == "P"
 
 
+def test_level_and_post_order_index_round_trips() -> None:
+    cases = [
+        ("N", 0, 231_627_523_606_479),
+        ("N2", 8, 77_209_174_535_492),
+        ("N82", 134, 214_469_929_265_257),
+        ("Q381", 3_049, 795_604_004_266_974),
+        ("S", 5, 1_389_765_141_638_879),
+    ]
+    for cell, level, post in cases:
+        assert rh.cell_to_level_order_index(cell) == level
+        assert rh.level_order_index_to_cell(level) == cell
+        assert rh.cell_to_post_order_index(cell) == post
+        assert rh.post_order_index_to_cell(post) == cell
+
+    with pytest.raises(ValueError, match="level-order"):
+        rh.level_order_index_to_cell(1_389_765_141_638_880)
+    with pytest.raises(ValueError, match="post-order"):
+        rh.post_order_index_to_cell(1_389_765_141_638_880)
+
+
+def test_predecessor_and_successor_traversal() -> None:
+    assert rh.cell_to_successor("N82") == "N83"
+    assert rh.cell_to_successor("N82", 0) == "O"
+    assert rh.cell_to_successor("N82", 1) == "O0"
+    assert rh.cell_to_successor("N82", 3) == "N830"
+    assert rh.cell_to_predecessor("N08") == "N07"
+    assert rh.cell_to_predecessor("N08", 0) is None
+    assert rh.cell_to_predecessor("N08", 3) == "N088"
+    assert rh.cell_to_successor("S", 15) is None
+
+    with pytest.raises(ValueError, match="resolution"):
+        rh.cell_to_successor("N82", 16)
+
+
 def test_integer_round_trip() -> None:
     cell = "S444375206675068"
     assert rh.int_to_str(rh.str_to_int(cell)) == cell
@@ -55,3 +89,218 @@ def test_validation() -> None:
     with pytest.raises(ValueError):
         rh.latlng_to_cell(91.0, 0.0, 3)
 
+
+@pytest.mark.parametrize(
+    ("cell", "region", "shape"),
+    [
+        ("P2", "equatorial", "quad"),
+        ("N", "north_polar", "cap"),
+        ("S4", "south_polar", "cap"),
+        ("N62", "north_polar", "dart"),
+        ("S43", "south_polar", "skew_quad"),
+    ],
+)
+def test_region_and_shape_match_upstream(cell: str, region: str, shape: str) -> None:
+    assert rh.get_cell_region(cell) == region
+    assert rh.get_cell_shape(cell) == shape
+
+
+def test_planar_neighbors_include_polar_rotations() -> None:
+    assert rh.cell_to_neighbors("N0") == {
+        "left": "R0",
+        "right": "N1",
+        "down": "N3",
+        "up": "Q2",
+    }
+    assert rh.cell_to_neighbor("Q888", "right") == "R666"
+    assert rh.cell_to_neighbor("Q888", "down") == "S666"
+    with pytest.raises(ValueError):
+        rh.cell_to_neighbor("N0", "north")
+
+
+@pytest.mark.parametrize(
+    ("cell", "expected"),
+    [
+        (
+            "P2",
+            {"north": "N2", "south": "P5", "west": "P1", "east": "Q0"},
+        ),
+        (
+            "N",
+            {"south_0": "O", "south_1": "P", "south_2": "Q", "south_3": "R"},
+        ),
+        (
+            "N0",
+            {
+                "west": "N1",
+                "south_west": "Q2",
+                "south_east": "R0",
+                "east": "N3",
+            },
+        ),
+        (
+            "S43",
+            {"north": "S35", "south": "S44", "east": "S40", "west": "S46"},
+        ),
+    ],
+)
+def test_ellipsoidal_neighbors_match_upstream(
+    cell: str, expected: dict[str, str]
+) -> None:
+    assert rh.cell_to_neighbors(cell, plane=False) == expected
+    for direction, neighbour in expected.items():
+        assert rh.cell_to_neighbor(cell, direction, plane=False) == neighbour
+
+
+def test_ellipsoidal_direction_validation() -> None:
+    assert rh.cell_to_neighbor("P2", "north_west", plane=False) is None
+    with pytest.raises(ValueError):
+        rh.cell_to_neighbor("P2", "left", plane=False)
+
+
+def test_geographic_vertex_order_and_dart_trimming() -> None:
+    boundary = rh.cell_to_boundary("N0")
+    assert len(boundary) == 4
+    expected = [
+        (74.424006701996, 90.0),
+        (41.937853910160, 120.0),
+        (41.937853910160, 90.0),
+        (41.937853910160, 60.0),
+    ]
+    for actual, reference in zip(boundary, expected):
+        assert actual == pytest.approx(reference, abs=2e-10)
+    assert len(rh.cell_to_boundary("N0", trim_dart=True)) == 3
+    assert len(rh.cell_to_boundary("N43", trim_dart=True)) == 4
+
+
+def test_densified_boundary_has_an_exact_point_count_for_every_shape() -> None:
+    for cell in ["P2", "N", "N0", "N43"]:
+        assert len(rh.cell_to_boundary_densified(cell, points_per_edge=3)) == 8
+        assert len(rh.cell_to_boundary_densified(cell, points_per_edge=5)) == 16
+
+    expected = [
+        (74.424006701996, 90.0),
+        (58.52801748206219, 112.5),
+        (41.93785391016014, 120.0),
+        (41.93785391016014, 105.0),
+        (41.93785391016014, 90.0),
+        (41.93785391016014, 75.0),
+        (41.93785391016014, 60.0),
+        (58.52801748206219, 67.5),
+    ]
+    actual = rh.cell_to_boundary_densified("N0", points_per_edge=3)
+    for point, reference in zip(actual, expected):
+        assert point == pytest.approx(reference, abs=2e-10)
+
+
+def test_densified_boundary_validation_and_interior_inset() -> None:
+    with pytest.raises(ValueError, match="at least 2"):
+        rh.cell_to_boundary_densified("P2", points_per_edge=1)
+    outer = rh.cell_to_boundary_densified("N62", points_per_edge=3)
+    inner = rh.cell_to_boundary_densified(
+        "N62", points_per_edge=3, interior=True
+    )
+    assert inner != outer
+
+
+def test_upstream_object_facade() -> None:
+    dggs = rh.RHEALPixDGGS()
+    cell = dggs.cell(("N", 6, 2))
+    assert isinstance(cell, rh.Cell)
+    assert str(cell) == "N62"
+    assert cell.suid == ("N", 6, 2)
+    assert cell.resolution == 2
+    assert cell.region() == "north_polar"
+    assert cell.ellipsoidal_shape == "dart"
+    assert {name: str(value) for name, value in cell.neighbors().items()} == {
+        "left": "N61",
+        "right": "N70",
+        "down": "N65",
+        "up": "N38",
+    }
+    assert len(cell.vertices(plane=False, trim_dart=True)) == 3
+    assert [str(value) for value in dggs.cell("P").subcells()] == [
+        f"P{digit}" for digit in range(9)
+    ]
+    assert str(dggs.cell_from_point(1, (0.0, 0.0))) == "Q3"
+    assert str(dggs.cell_from_point(1, (0.0, 45.0), plane=False)) == "N2"
+
+
+def test_upstream_object_facade_boundary_semantics() -> None:
+    dggs = rh.RHEALPixDGGS()
+    assert len(dggs.cell("N0").boundary(n=3)) == 8
+    assert len(dggs.cell("N0").boundary(n=3, plane=False)) == 8
+    assert len(dggs.cell("N43").boundary(n=3, plane=False)) == 8
+    assert len(dggs.cell("P2").boundary(n=3, plane=False)) == 4
+    assert len(dggs.cell("N").boundary(n=3, plane=False)) == 4
+    assert dggs.cell("P2").boundary(n=3, plane=False, interior=True) == (
+        dggs.cell("P2").vertices(plane=False)
+    )
+
+    with pytest.raises(ValueError, match="at least 2"):
+        dggs.cell("N0").boundary(n=1)
+
+
+def test_upstream_object_facade_ordering_and_traversal() -> None:
+    dggs = rh.RHEALPixDGGS()
+    cells = [
+        dggs.cell(value)
+        for value in ["N", "N0", "N00", "N01", "N08", "N1", "O0"]
+    ]
+    assert [str(cell) for cell in sorted(cells)] == [
+        "N00",
+        "N01",
+        "N08",
+        "N0",
+        "N1",
+        "N",
+        "O0",
+    ]
+
+    cell = dggs.cell("Q381")
+    assert cell.index() == 3_049
+    assert cell.index("post") == 795_604_004_266_974
+    assert dggs.cell(level_order_index=cell.index()) == cell
+    assert dggs.cell(post_order_index=cell.index("post")) == cell
+    assert str(dggs.cell("N82").successor(3)) == "N830"
+    assert str(dggs.cell("N08").predecessor(3)) == "N088"
+
+    with pytest.raises(ValueError, match="exactly one"):
+        dggs.cell()
+    with pytest.raises(ValueError, match="exactly one"):
+        dggs.cell("N", level_order_index=0)
+    with pytest.raises(ValueError, match="order"):
+        cell.index("unknown")
+
+
+def test_facade_respects_custom_polar_square_positions_and_metrics() -> None:
+    dggs = rh.RHEALPixDGGS(north_square=1, south_square=3)
+    assert str(dggs.cell("N0").neighbor("left")) == "O0"
+    assert str(dggs.cell("S0").neighbor("up")) == "R6"
+    cell = dggs.cell("P57")
+    assert math.isclose(cell.area(plane=True), cell.width() ** 2)
+    assert math.isclose(cell.area(plane=False), rh.cell_area("P57"))
+    assert cell.width(plane=False) is None
+    ellipsoidal_neighbors = dggs.cell("N0").neighbors(plane=False)
+    assert list(ellipsoidal_neighbors) == [
+        "west",
+        "south_west",
+        "south_east",
+        "east",
+    ]
+    assert {
+        direction: str(neighbour)
+        for direction, neighbour in ellipsoidal_neighbors.items()
+    } == {
+        "west": "N1",
+        "south_west": "R2",
+        "south_east": "O0",
+        "east": "N3",
+    }
+    assert str(dggs.cell("S0").neighbor("north_east", plane=False)) == "R6"
+    assert list(rh.WGS84_003.cell("N").neighbors(plane=False)) == [
+        "south_0",
+        "south_1",
+        "south_2",
+        "south_3",
+    ]
