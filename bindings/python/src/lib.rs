@@ -1,5 +1,6 @@
 //! PyO3 bindings for the dependency-free `rhealpixdggs` core.
 
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
@@ -57,6 +58,26 @@ fn cell_to_boundary(cell: &str, trim_dart: bool) -> PyResult<Vec<(f64, f64)>> {
     let cell = parse_cell(cell)?;
     RhealpixDggs::wgs84_003()
         .cell_vertices_lonlat(&cell, trim_dart)
+        .map(|points| {
+            points
+                .into_iter()
+                .map(|(longitude, latitude)| (latitude, longitude))
+                .collect()
+        })
+        .map_err(value_error)
+}
+
+/// Return exactly `4 * points_per_edge - 4` boundary points as
+/// `(latitude, longitude)` degrees.
+#[pyfunction(signature = (cell, points_per_edge=2, interior=false))]
+fn cell_to_boundary_densified(
+    cell: &str,
+    points_per_edge: usize,
+    interior: bool,
+) -> PyResult<Vec<(f64, f64)>> {
+    let cell = parse_cell(cell)?;
+    RhealpixDggs::wgs84_003()
+        .cell_boundary_lonlat(&cell, points_per_edge, interior)
         .map(|points| {
             points
                 .into_iter()
@@ -203,6 +224,27 @@ fn compat_cell_vertices(
     }
 }
 
+/// Compatibility-facade boundary with upstream coordinate ordering.
+#[pyfunction(name = "_cell_boundary", signature = (cell, n=2, plane=true, interior=false, north_square=0, south_square=0))]
+fn compat_cell_boundary(
+    cell: &str,
+    n: usize,
+    plane: bool,
+    interior: bool,
+    north_square: u8,
+    south_square: u8,
+) -> PyResult<Vec<(f64, f64)>> {
+    let cell = parse_cell(cell)?;
+    let dggs = configured_dggs(north_square, south_square);
+    if plane {
+        dggs.cell_boundary_projected(&cell, n, interior)
+            .map_err(value_error)
+    } else {
+        dggs.cell_boundary_lonlat_compatible(&cell, n, interior)
+            .map_err(value_error)
+    }
+}
+
 /// Compatibility-facade neighbour with configurable polar squares.
 #[pyfunction(name = "_cell_neighbor", signature = (cell, direction, plane=true, north_square=0, south_square=0))]
 fn compat_cell_neighbor(
@@ -290,6 +332,68 @@ fn cell_to_children(cell: &str, resolution: Option<u8>) -> PyResult<Vec<String>>
         .map_err(value_error)
 }
 
+/// Return the next cell at the requested resolution in post-order traversal.
+#[pyfunction(signature = (cell, resolution=None))]
+fn cell_to_successor(cell: &str, resolution: Option<u8>) -> PyResult<Option<String>> {
+    let cell = parse_cell(cell)?;
+    let successor = match resolution {
+        Some(resolution) => cell.successor_at(resolution).map_err(value_error)?,
+        None => cell.successor(),
+    };
+    Ok(successor.map(|value| value.to_string()))
+}
+
+/// Return the previous cell at the requested resolution in post-order traversal.
+#[pyfunction(signature = (cell, resolution=None))]
+fn cell_to_predecessor(cell: &str, resolution: Option<u8>) -> PyResult<Option<String>> {
+    let cell = parse_cell(cell)?;
+    let predecessor = match resolution {
+        Some(resolution) => cell.predecessor_at(resolution).map_err(value_error)?,
+        None => cell.predecessor(),
+    };
+    Ok(predecessor.map(|value| value.to_string()))
+}
+
+/// Return the stable zero-based level-order index.
+#[pyfunction]
+fn cell_to_level_order_index(cell: &str) -> PyResult<u64> {
+    Ok(parse_cell(cell)?.level_order_index())
+}
+
+/// Construct a cell from its stable zero-based level-order index.
+#[pyfunction]
+fn level_order_index_to_cell(index: u64) -> PyResult<String> {
+    CellId::from_level_order_index(index)
+        .map(|cell| cell.to_string())
+        .map_err(value_error)
+}
+
+/// Return the zero-based post-order index in the finite hierarchy.
+#[pyfunction]
+fn cell_to_post_order_index(cell: &str) -> PyResult<u64> {
+    Ok(parse_cell(cell)?.post_order_index())
+}
+
+/// Construct a cell from its zero-based post-order index.
+#[pyfunction]
+fn post_order_index_to_cell(index: u64) -> PyResult<String> {
+    CellId::from_post_order_index(index)
+        .map(|cell| cell.to_string())
+        .map_err(value_error)
+}
+
+/// Compare two cell IDs using upstream post-order traversal.
+#[pyfunction(name = "_compare_cells")]
+fn compat_compare_cells(left: &str, right: &str) -> PyResult<i8> {
+    let left = parse_cell(left)?;
+    let right = parse_cell(right)?;
+    Ok(match left.cmp(&right) {
+        Ordering::Less => -1,
+        Ordering::Equal => 0,
+        Ordering::Greater => 1,
+    })
+}
+
 /// Return the cell resolution.
 #[pyfunction]
 fn get_resolution(cell: &str) -> PyResult<u8> {
@@ -372,12 +476,19 @@ fn _rhealpixdggs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(latlngs_to_cells, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_latlng, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_boundary, module)?)?;
+    module.add_function(wrap_pyfunction!(cell_to_boundary_densified, module)?)?;
     module.add_function(wrap_pyfunction!(get_cell_region, module)?)?;
     module.add_function(wrap_pyfunction!(get_cell_shape, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_neighbor, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_neighbors, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_parent, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_children, module)?)?;
+    module.add_function(wrap_pyfunction!(cell_to_successor, module)?)?;
+    module.add_function(wrap_pyfunction!(cell_to_predecessor, module)?)?;
+    module.add_function(wrap_pyfunction!(cell_to_level_order_index, module)?)?;
+    module.add_function(wrap_pyfunction!(level_order_index_to_cell, module)?)?;
+    module.add_function(wrap_pyfunction!(cell_to_post_order_index, module)?)?;
+    module.add_function(wrap_pyfunction!(post_order_index_to_cell, module)?)?;
     module.add_function(wrap_pyfunction!(get_resolution, module)?)?;
     module.add_function(wrap_pyfunction!(get_base_cell_number, module)?)?;
     module.add_function(wrap_pyfunction!(is_valid_cell, module)?)?;
@@ -389,9 +500,11 @@ fn _rhealpixdggs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(compat_cell_from_point, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_nucleus, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_vertices, module)?)?;
+    module.add_function(wrap_pyfunction!(compat_cell_boundary, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_neighbor, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_neighbors, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_metric, module)?)?;
+    module.add_function(wrap_pyfunction!(compat_compare_cells, module)?)?;
     module.add("MAX_RESOLUTION", MAX_RESOLUTION)?;
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())

@@ -4,8 +4,9 @@ A Rust-first implementation of the aperture-9 rHEALPix Discrete Global Grid
 System, with Python as the first supported language binding.
 
 > **Status: early alpha.** Point indexing, projection, shape-aware vertices,
-> planar and ellipsoidal neighbours, hierarchy operations, equal-area metrics,
-> stable integer IDs, and an initial upstream object facade are implemented.
+> exact densified boundaries, planar and ellipsoidal neighbours, hierarchy
+> traversal and ordering, equal-area metrics, stable integer IDs, and an
+> initial upstream object facade are implemented.
 > This is not yet a drop-in replacement for every geometry operation in
 > [`rhealpixdggs-py`](https://github.com/manaakiwhenua/rhealpixdggs-py).
 
@@ -18,6 +19,8 @@ crates/rhealpixdggs/   Rust projection and indexing core
 bindings/python/       PyO3 extension module
 python/rhealpixdggs/   Python package and type information
 tests/python/          Python API and upstream golden tests
+tests/fixtures/        Versioned cross-language conformance corpora
+tools/                 Deterministic corpus and development utilities
 ```
 
 That avoids reimplementing rHEALPix independently in each language. The cell
@@ -42,12 +45,18 @@ assert cell == "R887560473610"
 
 lat, lng = rh.cell_to_latlng(cell)
 boundary = rh.cell_to_boundary(cell)
+dense_boundary = rh.cell_to_boundary_densified(cell, points_per_edge=16)
+assert len(dense_boundary) == 60  # exactly 4 * 16 - 4
 children = rh.cell_to_children(cell)
 neighbors = rh.cell_to_neighbors(cell)
 geographic_neighbors = rh.cell_to_neighbors(cell, plane=False)
 
 integer_id = rh.str_to_int(cell)
 assert rh.int_to_str(integer_id) == cell
+
+post_index = rh.cell_to_post_order_index(cell)
+assert rh.post_order_index_to_cell(post_index) == cell
+next_cell = rh.cell_to_successor(cell)
 ```
 
 The Python API follows H3's coordinate convention: functions accept and return
@@ -63,12 +72,21 @@ cell = WGS84_003.cell(("N", 6, 2))
 assert cell.ellipsoidal_shape == "dart"
 assert str(cell.neighbor("up")) == "N38"
 vertices = cell.vertices(plane=False, trim_dart=True)
+boundary = cell.boundary(n=16, plane=False)
+assert WGS84_003.cell(post_order_index=cell.index("post")) == cell
+next_cell = cell.successor()
 ```
 
 The facade currently supports aperture 9 on WGS84, configurable polar-square
 positions, point indexing, nuclei, vertices, planar and ellipsoidal neighbours,
-hierarchy expansion, and cell metrics. Alternate ellipsoids, alternate
-apertures, and densified boundaries remain on the roadmap.
+densified boundaries, ordering and traversal, hierarchy expansion, and cell
+metrics. Alternate ellipsoids and alternate apertures remain on the roadmap.
+
+The new functional `cell_to_boundary_densified` call has an exact contract for
+every shape: `points_per_edge >= 2` and `4 * points_per_edge - 4` returned
+points, ordered clockwise from geographic northwest. For migration parity,
+`Cell.boundary()` retains upstream's geographic shortcut: quad and cap cells
+return four vertices, while dart and skew-quad cells use the requested density.
 
 ## Initial performance
 
@@ -98,13 +116,17 @@ let (longitude, latitude) = dggs.cell_to_lonlat(&cell)?;
 | WGS84_003 point → cell | Yes | Yes | Golden-tested |
 | Cell → projected/geographic nucleus | Yes | Yes | Golden-tested |
 | Shape classification and geographic vertices | Yes | Yes | Golden-tested, including dart trimming |
+| Exact densified projected/geographic boundaries | Yes | Yes | Differential-tested across shapes and polar layouts |
 | Planar edge neighbours | Yes | Yes | Golden-tested, including polar rotations |
 | Ellipsoidal edge neighbours | Yes | Yes | Exhaustively differential-tested through resolution 3 |
 | Parent, children, descendants | Yes | Yes | Yes |
+| Post-order comparison and predecessor/successor traversal | Yes | Yes | Exhaustively differential-tested through resolution 3 |
+| Level/post-order index ↔ cell | Yes | Yes | Differential-tested; two upstream defects corrected |
 | Recursive compact/uncompact | Yes | Yes | Yes |
-| String ↔ stable `u64` | Yes | Yes | New API |
+| String ↔ stable level-order `u64` | Yes | Yes | New API |
 | Equal-area cell metric | Yes | Yes | Golden-tested |
-| `RHEALPixDGGS` / `Cell` object facade | — | Partial | Core migration calls supported |
+| Versioned upstream conformance corpus | Yes | Yes | 1,583 shared cases from upstream 0.6.0 |
+| `RHEALPixDGGS` / `Cell` object facade | — | Partial | Includes upstream boundary semantics |
 | Lines, polygons, and region filling | Planned | Planned | No |
 | Custom aperture / `N_side` | Planned decision | — | No |
 
@@ -129,13 +151,23 @@ on each platform.
 ## Compatibility policy
 
 The first target is numerical and identifier parity with the upstream
-`WGS84_003` configuration. Upstream outputs are committed as golden tests. New
-algorithms should be benchmarked against both the Rust implementation and the
-released Python package; speed changes must not silently change cell IDs.
+`WGS84_003` configuration. Upstream 0.6.0 outputs are committed as a versioned,
+language-neutral conformance corpus consumed by both the Rust core and Python
+binding. It covers all 16 polar-square layouts, 1,344 point-indexing cases, 208
+geometry cases, traversal and ordering, and metrics through resolution 15. See
+[`tests/fixtures/rhealpixdggs-py-0.6.0`](tests/fixtures/rhealpixdggs-py-0.6.0)
+for its provenance, schema, checksum, and deterministic regeneration command.
+New algorithms should be benchmarked against both the Rust implementation and
+the released Python package; speed changes must not silently change cell IDs.
 
 The Python surface is intentionally H3-like for new code. The separate
 `RHEALPixDGGS` and `Cell` facade preserves upstream coordinate ordering and is
 being expanded incrementally as matching core semantics land.
+
+Known upstream defects are corrected rather than reproduced: resolution-zero
+level indices are `0..=5` and round-trip correctly, and successor traversal
+past terminal cell `S` returns `None` at finer resolutions instead of raising
+an internal `AttributeError`.
 
 ## Licence and attribution
 

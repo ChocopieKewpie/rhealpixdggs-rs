@@ -5,6 +5,13 @@ use std::fmt;
 pub enum Error {
     /// A cell identifier could not be parsed or violates the aperture-9 rules.
     InvalidCellId(String),
+    /// A traversal index lies outside the finite cell hierarchy.
+    InvalidCellIndex {
+        /// Invalid zero-based index.
+        index: u64,
+        /// Traversal order used to interpret the index.
+        order: &'static str,
+    },
     /// The requested resolution is outside the supported range.
     InvalidResolution(u8),
     /// A requested parent resolution is finer than the cell.
@@ -27,16 +34,23 @@ pub enum Error {
     InvalidDirection(String),
     /// A geographic direction name is not valid for an ellipsoidal cell.
     InvalidEllipsoidalDirection(String),
+    /// A densified boundary requested fewer than two points per edge.
+    InvalidBoundaryPointCount(usize),
     /// Projected input does not lie inside the rHEALPix image.
     OutsideProjection,
     /// A bulk expansion would allocate an unreasonable number of cells.
     ExpansionTooLarge(u64),
+    /// A boundary request would allocate an unreasonable number of points.
+    BoundaryTooLarge(u64),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidCellId(value) => write!(f, "invalid rHEALPix cell ID: {value}"),
+            Self::InvalidCellIndex { index, order } => {
+                write!(f, "invalid {order}-order cell index: {index}")
+            }
             Self::InvalidResolution(value) => write!(
                 f,
                 "resolution {value} is invalid; expected 0..={}",
@@ -58,10 +72,18 @@ impl fmt::Display for Error {
             Self::InvalidEllipsoidalDirection(value) => {
                 write!(f, "invalid ellipsoidal neighbour direction {value:?}")
             }
+            Self::InvalidBoundaryPointCount(value) => write!(
+                f,
+                "boundary points per edge must be at least 2; got {value}"
+            ),
             Self::OutsideProjection => write!(f, "point lies outside the rHEALPix image"),
             Self::ExpansionTooLarge(count) => write!(
                 f,
                 "operation would produce {count} cells; split the request into smaller regions"
+            ),
+            Self::BoundaryTooLarge(count) => write!(
+                f,
+                "operation would produce {count} boundary points; reduce points_per_edge"
             ),
         }
     }

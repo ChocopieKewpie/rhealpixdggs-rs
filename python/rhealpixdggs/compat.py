@@ -8,18 +8,27 @@ operations are ported.
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
+from functools import total_ordering
 from itertools import product
 from typing import Final
 
 from ._rhealpixdggs import (
     MAX_RESOLUTION,
+    _compare_cells,
+    _cell_boundary,
     _cell_from_point,
     _cell_metric,
     _cell_neighbor,
     _cell_neighbors,
     _cell_nucleus,
     _cell_vertices,
+    cell_to_level_order_index,
+    cell_to_post_order_index,
+    cell_to_predecessor,
+    cell_to_successor,
     get_cell_shape,
+    level_order_index_to_cell,
+    post_order_index_to_cell,
 )
 
 _FACES: Final = frozenset("NOPQRS")
@@ -80,7 +89,26 @@ class RHEALPixDGGS:
             and self.south_square == other.south_square
         )
 
-    def cell(self, suid: str | Sequence[str | int]) -> Cell:
+    def cell(
+        self,
+        suid: str | Sequence[str | int] | None = None,
+        level_order_index: int | None = None,
+        post_order_index: int | None = None,
+    ) -> Cell:
+        """Construct a cell from exactly one identifier or traversal index."""
+        supplied = sum(
+            value is not None
+            for value in (suid, level_order_index, post_order_index)
+        )
+        if supplied != 1:
+            raise ValueError(
+                "provide exactly one of suid, level_order_index, or post_order_index"
+            )
+        if level_order_index is not None:
+            suid = level_order_index_to_cell(level_order_index)
+        elif post_order_index is not None:
+            suid = post_order_index_to_cell(post_order_index)
+        assert suid is not None
         return Cell(self, suid)
 
     def cell_from_point(
@@ -119,6 +147,7 @@ class RHEALPixDGGS:
         return value
 
 
+@total_ordering
 class Cell:
     """Upstream-style cell object retaining its parent DGGS configuration."""
 
@@ -146,6 +175,11 @@ class Cell:
             and self.rdggs == other.rdggs
             and self.suid == other.suid
         )
+
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, Cell):
+            return NotImplemented
+        return _compare_cells(self._identifier, other._identifier) < 0
 
     @property
     def north_square(self) -> int:
@@ -187,6 +221,40 @@ class Cell:
             self.north_square,
             self.south_square,
         )
+
+    def boundary(
+        self, n: int = 2, plane: bool = True, interior: bool = False
+    ) -> list[tuple[float, float]]:
+        """Return the upstream-compatible clockwise cell boundary.
+
+        Planar boundaries contain exactly ``4*n - 4`` points. Geographic
+        quad and cap cells retain upstream's four-vertex shortcut; dart and
+        skew-quad cells contain ``4*n - 4`` points.
+        """
+        return _cell_boundary(
+            self._identifier,
+            n,
+            plane,
+            interior,
+            self.north_square,
+            self.south_square,
+        )
+
+    def index(self, order: str = "resolution") -> int:
+        """Return the level- or post-order index of this cell."""
+        if order == "resolution":
+            return cell_to_level_order_index(self._identifier)
+        if order == "post":
+            return cell_to_post_order_index(self._identifier)
+        raise ValueError("order must be 'resolution' or 'post'")
+
+    def successor(self, resolution: int | None = None) -> Cell | None:
+        identifier = cell_to_successor(self._identifier, resolution)
+        return None if identifier is None else Cell(self.rdggs, identifier)
+
+    def predecessor(self, resolution: int | None = None) -> Cell | None:
+        identifier = cell_to_predecessor(self._identifier, resolution)
+        return None if identifier is None else Cell(self.rdggs, identifier)
 
     def neighbor(self, direction: str, plane: bool = True) -> Cell | None:
         identifier = _cell_neighbor(

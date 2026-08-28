@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::str::FromStr;
@@ -238,7 +239,7 @@ impl TryFrom<char> for Face {
 ///
 /// The string representation is compatible with `rhealpixdggs-py`, for
 /// example `Q381`. Resolution-zero cells contain only their face letter.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CellId {
     face: Face,
     digits: Vec<u8>,
@@ -406,6 +407,141 @@ impl CellId {
         Ok(current)
     }
 
+    /// Return the next cell at the same resolution in identifier order.
+    pub fn successor(&self) -> Option<Self> {
+        let mut digits = self.digits.clone();
+        if let Some(index) = digits.iter().rposition(|digit| *digit < APERTURE as u8 - 1) {
+            digits[index] += 1;
+            digits[index + 1..].fill(0);
+            return Some(Self {
+                face: self.face,
+                digits,
+            });
+        }
+
+        Face::from_number(self.face.number() + 1).map(|face| Self {
+            face,
+            digits: vec![0; self.digits.len()],
+        })
+    }
+
+    /// Return the greatest cell at `resolution` that precedes this cell.
+    ///
+    /// This follows upstream post-order traversal semantics. If the target is
+    /// coarser, this cell is first truncated; if it is finer, its final
+    /// descendant is returned.
+    pub fn predecessor_at(&self, resolution: u8) -> Result<Option<Self>> {
+        validate_resolution(resolution)?;
+        match resolution.cmp(&self.resolution()) {
+            Ordering::Less => Ok(self.parent_at(resolution)?.predecessor()),
+            Ordering::Equal => Ok(self.predecessor()),
+            Ordering::Greater => {
+                let mut digits = self.digits.clone();
+                digits.resize(usize::from(resolution), APERTURE as u8 - 1);
+                Ok(Some(Self {
+                    face: self.face,
+                    digits,
+                }))
+            }
+        }
+    }
+
+    /// Return the previous cell at the same resolution in identifier order.
+    pub fn predecessor(&self) -> Option<Self> {
+        let mut digits = self.digits.clone();
+        if let Some(index) = digits.iter().rposition(|digit| *digit > 0) {
+            digits[index] -= 1;
+            digits[index + 1..].fill(APERTURE as u8 - 1);
+            return Some(Self {
+                face: self.face,
+                digits,
+            });
+        }
+
+        self.face
+            .number()
+            .checked_sub(1)
+            .and_then(Face::from_number)
+            .map(|face| Self {
+                face,
+                digits: vec![APERTURE as u8 - 1; self.digits.len()],
+            })
+    }
+
+    /// Return the least cell at `resolution` that follows this cell.
+    ///
+    /// This follows upstream post-order traversal semantics. If the target is
+    /// coarser, this cell is first truncated; if it is finer, the first cell
+    /// in the next same-resolution subtree is returned. The terminal southern
+    /// cell returns `None` at every requested resolution.
+    pub fn successor_at(&self, resolution: u8) -> Result<Option<Self>> {
+        validate_resolution(resolution)?;
+        match resolution.cmp(&self.resolution()) {
+            Ordering::Less => Ok(self.parent_at(resolution)?.successor()),
+            Ordering::Equal => Ok(self.successor()),
+            Ordering::Greater => Ok(self.successor().map(|successor| {
+                let mut digits = successor.digits;
+                digits.resize(usize::from(resolution), 0);
+                Self {
+                    face: successor.face,
+                    digits,
+                }
+            })),
+        }
+    }
+
+    /// Return the zero-based level-order index used by the stable integer ID.
+    pub fn level_order_index(&self) -> u64 {
+        self.to_u64()
+    }
+
+    /// Construct a cell from its zero-based level-order index.
+    pub fn from_level_order_index(index: u64) -> Result<Self> {
+        Self::from_u64(index).map_err(|_| Error::InvalidCellIndex {
+            index,
+            order: "level",
+        })
+    }
+
+    /// Return the zero-based post-order index in the complete hierarchy.
+    ///
+    /// Descendants precede their parent, child subtrees are ordered `0..=8`,
+    /// and the hierarchy is finite at [`crate::MAX_RESOLUTION`].
+    pub fn post_order_index(&self) -> u64 {
+        let mut result = u64::from(self.face.number()) * post_order_subtree_size(0);
+        for (position, digit) in self.digits.iter().enumerate() {
+            result += u64::from(*digit) * post_order_subtree_size(position as u8 + 1);
+        }
+        result + post_order_subtree_size(self.resolution()) - 1
+    }
+
+    /// Construct a cell from its zero-based post-order index.
+    pub fn from_post_order_index(index: u64) -> Result<Self> {
+        let root_size = post_order_subtree_size(0);
+        let total = 6 * root_size;
+        if index >= total {
+            return Err(Error::InvalidCellIndex {
+                index,
+                order: "post",
+            });
+        }
+
+        let face = Face::from_number((index / root_size) as u8)
+            .expect("a validated post-order index has one of six faces");
+        let mut remainder = index % root_size;
+        let mut digits = Vec::new();
+        for resolution in 0..=MAX_RESOLUTION {
+            let subtree_size = post_order_subtree_size(resolution);
+            if remainder == subtree_size - 1 {
+                return Ok(Self { face, digits });
+            }
+            let child_size = post_order_subtree_size(resolution + 1);
+            digits.push((remainder / child_size) as u8);
+            remainder %= child_size;
+        }
+        unreachable!("the finest-level subtree contains exactly one cell")
+    }
+
     /// Encode the cell as a stable resolution-major integer.
     ///
     /// This encoding is intended as a language-neutral interchange form. It
@@ -452,6 +588,30 @@ impl fmt::Display for CellId {
             write!(f, "{digit}")?;
         }
         Ok(())
+    }
+}
+
+impl Ord for CellId {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.face.cmp(&other.face) {
+            Ordering::Equal => {
+                for (left, right) in self.digits.iter().zip(&other.digits) {
+                    match left.cmp(right) {
+                        Ordering::Equal => {}
+                        ordering => return ordering,
+                    }
+                }
+                // Post-order traversal visits descendants before their parent.
+                other.digits.len().cmp(&self.digits.len())
+            }
+            ordering => ordering,
+        }
+    }
+}
+
+impl PartialOrd for CellId {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -559,6 +719,10 @@ const fn resolution_offset(resolution: u8) -> u64 {
     }
 }
 
+const fn post_order_subtree_size(resolution: u8) -> u64 {
+    (APERTURE.pow((MAX_RESOLUTION - resolution + 1) as u32) - 1) / (APERTURE - 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -582,6 +746,108 @@ mod tests {
             }
         }
         assert!(CellId::from_u64(resolution_offset(MAX_RESOLUTION + 1)).is_err());
+    }
+
+    #[test]
+    fn level_and_post_order_indices_match_the_finite_hierarchy() {
+        let cases = [
+            ("N", 0, 231_627_523_606_479),
+            ("N0", 6, 25_736_391_511_830),
+            ("N2", 8, 77_209_174_535_492),
+            ("N82", 134, 214_469_929_265_257),
+            ("Q381", 3_049, 795_604_004_266_974),
+            ("S", 5, 1_389_765_141_638_879),
+            (
+                "S888888888888888",
+                1_389_765_141_638_879,
+                1_389_765_141_638_864,
+            ),
+        ];
+        for (identifier, level, post) in cases {
+            let cell: CellId = identifier.parse().unwrap();
+            assert_eq!(cell.level_order_index(), level, "level {identifier}");
+            assert_eq!(cell.post_order_index(), post, "post {identifier}");
+            assert_eq!(
+                CellId::from_level_order_index(level).unwrap(),
+                cell,
+                "level round trip {identifier}"
+            );
+            assert_eq!(
+                CellId::from_post_order_index(post).unwrap(),
+                cell,
+                "post round trip {identifier}"
+            );
+        }
+
+        let total = resolution_offset(MAX_RESOLUTION + 1);
+        assert_eq!(total, 1_389_765_141_638_880);
+        assert_eq!(
+            CellId::from_level_order_index(total),
+            Err(Error::InvalidCellIndex {
+                index: total,
+                order: "level"
+            })
+        );
+        assert_eq!(
+            CellId::from_post_order_index(total),
+            Err(Error::InvalidCellIndex {
+                index: total,
+                order: "post"
+            })
+        );
+    }
+
+    #[test]
+    fn traversal_indices_round_trip_every_cell_through_resolution_four() {
+        for face_number in 0..6 {
+            let root = CellId::new(Face::from_number(face_number).unwrap(), Vec::new()).unwrap();
+            for resolution in 0..=4 {
+                for cell in root.descendants(resolution).unwrap() {
+                    assert_eq!(
+                        CellId::from_level_order_index(cell.level_order_index()).unwrap(),
+                        cell
+                    );
+                    assert_eq!(
+                        CellId::from_post_order_index(cell.post_order_index()).unwrap(),
+                        cell
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cell_order_is_upstream_post_order() {
+        let mut cells = ["N", "N0", "N00", "N01", "N08", "N1", "O0"]
+            .map(|identifier| identifier.parse::<CellId>().unwrap());
+        cells.sort();
+        assert_eq!(
+            cells.each_ref().map(ToString::to_string),
+            ["N00", "N01", "N08", "N0", "N1", "N", "O0"]
+        );
+        for cells in cells.windows(2) {
+            assert!(cells[0].post_order_index() < cells[1].post_order_index());
+        }
+    }
+
+    #[test]
+    fn predecessor_and_successor_match_upstream_examples() {
+        let cell: CellId = "N82".parse().unwrap();
+        assert_eq!(cell.successor().unwrap().to_string(), "N83");
+        assert_eq!(cell.successor_at(0).unwrap().unwrap().to_string(), "O");
+        assert_eq!(cell.successor_at(1).unwrap().unwrap().to_string(), "O0");
+        assert_eq!(cell.successor_at(3).unwrap().unwrap().to_string(), "N830");
+
+        let cell: CellId = "N08".parse().unwrap();
+        assert_eq!(cell.predecessor().unwrap().to_string(), "N07");
+        assert_eq!(cell.predecessor_at(0).unwrap(), None);
+        assert_eq!(cell.predecessor_at(1).unwrap(), None);
+        assert_eq!(cell.predecessor_at(3).unwrap().unwrap().to_string(), "N088");
+
+        let terminal: CellId = "S".parse().unwrap();
+        assert_eq!(terminal.successor(), None);
+        assert_eq!(terminal.successor_at(15).unwrap(), None);
+        assert_eq!(terminal.predecessor().unwrap().to_string(), "R");
     }
 
     #[test]

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ChocopieKewpie/rhealpixdggs-rs/tests/fixtures/rhealpixdggs-py-0.6.0/schema-v1.json",
+  "title": "rHEALPix cross-language conformance corpus",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "corpus_version",
+    "upstream",
+    "contract",
+    "counts",
+    "configurations",
+    "point_indexing",
+    "cell_geometry",
+    "topology",
+    "mixed_post_order",
+    "metrics"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "corpus_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "upstream": {
+      "type": "object",
+      "required": ["distribution", "version", "source_url", "source_files_sha256"]
+    },
+    "generator": { "type": "object" },
+    "contract": {
+      "type": "object",
+      "required": ["ellipsoid", "aperture", "max_resolution", "tolerances"]
+    },
+    "counts": {
+      "type": "object",
+      "required": ["configurations", "point_indexing", "cell_geometry", "topology", "metrics"]
+    },
+    "configurations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "north_square", "south_square"]
+      }
+    },
+    "point_indexing": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["configuration", "lonlat", "resolution", "cell"]
+      }
+    },
+    "cell_geometry": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "configuration",
+          "cell",
+          "region",
+          "shape",
+          "nucleus_projected",
+          "nucleus_lonlat",
+          "vertices_projected",
+          "vertices_lonlat",
+          "boundary_projected_n3",
+          "boundary_lonlat_n3",
+          "neighbors_projected",
+          "neighbors_lonlat"
+        ]
+      }
+    },
+    "topology": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "cell",
+          "level_order_index",
+          "post_order_index",
+          "successor",
+          "predecessor",
+          "successor_at",
+          "predecessor_at",
+          "children",
+          "children_error"
+        ]
+      }
+    },
+    "mixed_post_order": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "metrics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["resolution", "width_m", "area_projected_m2", "area_ellipsoidal_m2"]
+      }
+    }
+  },
+  "additionalProperties": false
+}

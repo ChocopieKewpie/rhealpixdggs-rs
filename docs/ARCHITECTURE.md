@@ -21,7 +21,7 @@ Canonical strings use one face letter (`N`, `O`, `P`, `Q`, `R`, `S`) followed
 by zero or more aperture-9 child digits (`0` through `8`). Digits are row-major
 within each 3×3 parent.
 
-The integer form is a resolution-major ordinal:
+The stable integer form is the level-order, resolution-major ordinal:
 
 ```text
 offset(resolution) + face × 9^resolution + base9(child_digits)
@@ -29,6 +29,11 @@ offset(resolution) + face × 9^resolution + base9(child_digits)
 
 where `offset(r) = 6 × (9^r − 1) / 8`. All cells through resolution 15 fit
 comfortably in `u64`. This encoding is explicitly alpha until 1.0.
+
+The core also exposes a post-order ordinal over the complete hierarchy through
+resolution 15. Cell comparison uses that order: descendants sort before their
+parent, then child subtrees `0..=8`, then faces `N..S`. Keeping the two orders
+explicit avoids overloading the stable interchange ID with traversal behavior.
 
 ## Coordinates
 
@@ -52,10 +57,15 @@ mutable prime-meridian state.
 ## Correctness strategy
 
 1. Small unit tests cover algebraic invariants and projection round trips.
-2. Golden tests record exact upstream cell IDs and tolerant floating outputs.
-3. Differential tests will run random and edge-case inputs through both
-   implementations.
-4. Every future language binding consumes the same fixture corpus.
+2. A checked-in, versioned JSON corpus records exact upstream cell IDs and
+   tolerant floating outputs with source-file hashes and a JSON Schema.
+3. Both the Rust integration suite and Python suite consume that same corpus;
+   future language bindings must do the same.
+4. The deterministic generator runs against an exact upstream release. A new
+   upstream release creates a new immutable corpus directory rather than
+   silently changing an existing compatibility contract.
+5. Differential tests will extend the corpus with random and additional
+   edge-case inputs as new operations land.
 
 ## Performance strategy
 

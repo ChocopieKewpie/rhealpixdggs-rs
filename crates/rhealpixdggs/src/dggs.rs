@@ -8,6 +8,7 @@ use crate::error::{Error, Result};
 use crate::projection;
 
 const N_SIDE: u64 = 3;
+const MAX_BOUNDARY_POINTS: usize = 10_000_000;
 
 /// An aperture-9 rHEALPix discrete global grid system.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -188,6 +189,90 @@ impl RhealpixDggs {
             result.remove(non_vertex);
         }
         Ok(result)
+    }
+
+    /// Return a clockwise, densified square boundary in projected metres.
+    ///
+    /// `points_per_edge` includes both corners of each edge and must be at
+    /// least two. Shared corners occur once, so the result always contains
+    /// exactly `4 * points_per_edge - 4` points. Points start at the planar
+    /// upper-left corner. When `interior` is true, the boundary is inset by
+    /// one ten-thousandth of the cell width, matching `rhealpixdggs-py`.
+    pub fn cell_boundary_projected(
+        &self,
+        cell: &CellId,
+        points_per_edge: usize,
+        interior: bool,
+    ) -> Result<Vec<(f64, f64)>> {
+        let point_count = boundary_point_count(points_per_edge)?;
+        let upper_left = self.cell_upper_left(cell)?;
+        let width = self.cell_width(cell.resolution())?;
+        let inset = if interior { width / 10_000.0 } else { 0.0 };
+        let step = (width - 2.0 * inset) / (points_per_edge - 1) as f64;
+        let mut edge_start = (upper_left.0 + inset, upper_left.1 - inset);
+        let mut result = Vec::with_capacity(point_count + 1);
+        result.push(edge_start);
+
+        for (dx, dy) in [(1.0, 0.0), (0.0, -1.0), (-1.0, 0.0), (0.0, 1.0)] {
+            for offset in 1..points_per_edge {
+                let offset = offset as f64 * step;
+                result.push((edge_start.0 + offset * dx, edge_start.1 + offset * dy));
+            }
+            edge_start = *result.last().expect("the boundary contains its start");
+        }
+
+        result.pop();
+        debug_assert_eq!(result.len(), point_count);
+        Ok(result)
+    }
+
+    /// Return a densified geographic boundary as longitude/latitude degrees.
+    ///
+    /// Unlike the upstream compatibility method, this always returns exactly
+    /// `4 * points_per_edge - 4` points for every ellipsoidal cell shape.
+    /// Points begin at the geographic northwest corner and proceed clockwise.
+    pub fn cell_boundary_lonlat(
+        &self,
+        cell: &CellId,
+        points_per_edge: usize,
+        interior: bool,
+    ) -> Result<Vec<(f64, f64)>> {
+        let mut planar = self.cell_boundary_projected(cell, points_per_edge, interior)?;
+        let vertices = self.cell_vertices_projected(cell)?;
+        let northwest = self.northwest_vertex_index(cell, &vertices)?;
+        planar.rotate_left(northwest * (points_per_edge - 1));
+        planar
+            .into_iter()
+            .map(|(x, y)| {
+                projection::inverse_in_region(
+                    self.ellipsoid,
+                    x,
+                    y,
+                    self.north_square,
+                    self.south_square,
+                    projection_region(cell.region()),
+                )
+            })
+            .collect()
+    }
+
+    /// Return the boundary produced by upstream `Cell.boundary` semantics.
+    ///
+    /// Geographic quad and cap cells return their four vertices regardless of
+    /// `points_per_edge` or `interior`; dart and skew-quad cells use the exact
+    /// densified boundary. Planar callers should use [`Self::cell_boundary_projected`].
+    pub fn cell_boundary_lonlat_compatible(
+        &self,
+        cell: &CellId,
+        points_per_edge: usize,
+        interior: bool,
+    ) -> Result<Vec<(f64, f64)>> {
+        boundary_point_count(points_per_edge)?;
+        if matches!(cell.shape(), CellShape::Quad | CellShape::Cap) {
+            self.cell_vertices_lonlat(cell, false)
+        } else {
+            self.cell_boundary_lonlat(cell, points_per_edge, interior)
+        }
     }
 
     /// Return the edge neighbour in a cardinal direction on the unfolded
@@ -521,6 +606,20 @@ const fn digit_neighbor(digit: u8, direction: Direction) -> u8 {
 
 fn longitude_delta(longitude: f64, origin: f64) -> f64 {
     (longitude - origin + 180.0).rem_euclid(360.0) - 180.0
+}
+
+fn boundary_point_count(points_per_edge: usize) -> Result<usize> {
+    if points_per_edge < 2 {
+        return Err(Error::InvalidBoundaryPointCount(points_per_edge));
+    }
+    let count = points_per_edge
+        .checked_sub(1)
+        .and_then(|value| value.checked_mul(4))
+        .ok_or(Error::BoundaryTooLarge(u64::MAX))?;
+    if count > MAX_BOUNDARY_POINTS {
+        return Err(Error::BoundaryTooLarge(count as u64));
+    }
+    Ok(count)
 }
 
 fn index_of_maximum<T, F>(values: &[T], key: F) -> usize
@@ -861,6 +960,110 @@ mod tests {
             let cell: CellId = identifier.parse().unwrap();
             assert_eq!(dggs.cell_vertices_lonlat(&cell, true).unwrap().len(), 3);
         }
+    }
+
+    #[test]
+    fn densified_boundaries_match_upstream_examples() {
+        let unit = RhealpixDggs::new(Ellipsoid::sphere(1.0).unwrap(), 0, 0);
+        let cell: CellId = "N6".parse().unwrap();
+        let expected_planar = [
+            (-PI, 5.0 * PI / 12.0),
+            (-11.0 * PI / 12.0, 5.0 * PI / 12.0),
+            (-5.0 * PI / 6.0, 5.0 * PI / 12.0),
+            (-5.0 * PI / 6.0, PI / 3.0),
+            (-5.0 * PI / 6.0, PI / 4.0),
+            (-11.0 * PI / 12.0, PI / 4.0),
+            (-PI, PI / 4.0),
+            (-PI, PI / 3.0),
+        ];
+        let actual = unit.cell_boundary_projected(&cell, 3, false).unwrap();
+        for (actual, expected) in actual.into_iter().zip(expected_planar) {
+            assert_close(actual, expected, 1e-14);
+        }
+
+        let wgs84 = RhealpixDggs::wgs84_003();
+        let cell: CellId = "N0".parse().unwrap();
+        let expected_geographic = [
+            (90.0, 74.424_006_701_996),
+            (112.5, 58.528_017_482_062_19),
+            (120.0, 41.937_853_910_160_14),
+            (105.0, 41.937_853_910_160_14),
+            (90.0, 41.937_853_910_160_14),
+            (75.0, 41.937_853_910_160_14),
+            (60.0, 41.937_853_910_160_14),
+            (67.5, 58.528_017_482_062_19),
+        ];
+        let actual = wgs84.cell_boundary_lonlat(&cell, 3, false).unwrap();
+        for (actual, expected) in actual.into_iter().zip(expected_geographic) {
+            assert_close(actual, expected, 2e-10);
+        }
+    }
+
+    #[test]
+    fn boundary_point_contract_is_exact_and_compatibility_is_explicit() {
+        let dggs = RhealpixDggs::wgs84_003();
+        for identifier in ["P2", "N", "N0", "N43"] {
+            let cell: CellId = identifier.parse().unwrap();
+            for points_per_edge in [2, 3, 5] {
+                let expected = 4 * points_per_edge - 4;
+                assert_eq!(
+                    dggs.cell_boundary_projected(&cell, points_per_edge, false)
+                        .unwrap()
+                        .len(),
+                    expected,
+                    "projected {identifier}"
+                );
+                assert_eq!(
+                    dggs.cell_boundary_lonlat(&cell, points_per_edge, false)
+                        .unwrap()
+                        .len(),
+                    expected,
+                    "geographic {identifier}"
+                );
+                let compatible = dggs
+                    .cell_boundary_lonlat_compatible(&cell, points_per_edge, true)
+                    .unwrap();
+                let expected_compatible =
+                    if matches!(cell.shape(), CellShape::Quad | CellShape::Cap) {
+                        4
+                    } else {
+                        expected
+                    };
+                assert_eq!(
+                    compatible.len(),
+                    expected_compatible,
+                    "compatible {identifier}"
+                );
+            }
+        }
+
+        let cell: CellId = "P2".parse().unwrap();
+        assert_eq!(
+            dggs.cell_boundary_projected(&cell, 1, false),
+            Err(Error::InvalidBoundaryPointCount(1))
+        );
+        assert!(matches!(
+            dggs.cell_boundary_projected(&cell, usize::MAX, false),
+            Err(Error::BoundaryTooLarge(_))
+        ));
+    }
+
+    #[test]
+    fn interior_boundary_is_inset_on_every_projected_edge() {
+        let dggs = RhealpixDggs::wgs84_003();
+        let cell: CellId = "N62".parse().unwrap();
+        let outer = dggs.cell_boundary_projected(&cell, 3, false).unwrap();
+        let inner = dggs.cell_boundary_projected(&cell, 3, true).unwrap();
+        assert_ne!(outer, inner);
+
+        let vertices = dggs.cell_vertices_projected(&cell).unwrap();
+        let (left, top) = vertices[0];
+        let (right, bottom) = vertices[2];
+        assert!(
+            inner
+                .iter()
+                .all(|&(x, y)| { x > left && x < right && y < top && y > bottom })
+        );
     }
 
     #[test]

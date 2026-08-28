@@ -16,13 +16,13 @@ other languages.
 
 ## M1 — Upstream semantic parity
 
-- [ ] Import a versioned golden corpus from the upstream unit and doctest suite
+- [x] Import a versioned golden corpus from the released upstream and doctests
 - [x] Cell shape classification: quad, cap, dart, skew quad
 - [x] Geographic vertex ordering and optional dart trimming
-- [ ] Densified geographic boundaries with an explicit point-count contract
+- [x] Densified geographic boundaries with an explicit point-count contract
 - [x] Planar edge neighbours, including polar rotations
 - [x] Ellipsoidal edge-neighbour direction names
-- [ ] Cell ordering, predecessor/successor, and level/post-order indices
+- [x] Cell ordering, predecessor/successor, and level/post-order indices
 - [ ] Region, line, and polygon coverage without requiring geometry types in core
 - [x] Initial Python `RHEALPixDGGS` and `Cell` compatibility facade
 - [ ] Complete facade parity for ordering, traversal, and geometry methods
@@ -48,7 +48,7 @@ single-point and bulk measurements.
 - [ ] Stable C ABI over integer/string IDs and flat coordinate buffers
 - [ ] WebAssembly/JavaScript package
 - [ ] Bindings selected from real users: likely R, Java, or C# next
-- [ ] Shared conformance fixtures consumed by every binding
+- [x] Shared conformance fixtures consumed by the core and implemented bindings
 
 ## M4 — Standards and ecosystem
 
