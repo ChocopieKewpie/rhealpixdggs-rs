@@ -44,6 +44,8 @@
   added a dedicated GeoPackage adapter test job.
 - Kept the facade corpus tests compatible with the package's Python 3.9
   minimum by avoiding the Python 3.10-only `zip(strict=...)` argument.
+- Forced versioned corpus fixtures to retain LF line endings on Windows so
+  their byte-level SHA-256 provenance checks are reproducible in CI.
 - Recorded the Windows x86_64 M2 result and explicitly deferred macOS arm64 as
   TBD until suitable hardware or a hosted run is available.
 
