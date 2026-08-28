@@ -1,5 +1,4 @@
 import threading
-import time
 
 import numpy as np
 import pytest
@@ -102,8 +101,8 @@ def test_bulk_point_work_releases_the_gil() -> None:
     # active. This is intentionally a coarse contract test, not a benchmark.
     points = np.column_stack(
         (
-            np.linspace(-89.0, 89.0, 400_000),
-            np.linspace(-179.0, 179.0, 400_000),
+            np.linspace(-89.0, 89.0, 2_000_000),
+            np.linspace(-179.0, 179.0, 2_000_000),
         )
     )
     started = threading.Event()
@@ -117,7 +116,6 @@ def test_bulk_point_work_releases_the_gil() -> None:
     thread = threading.Thread(target=convert)
     thread.start()
     started.wait()
-    time.sleep(0.01)
     progress = 0
     while not finished.is_set():
         progress += 1
