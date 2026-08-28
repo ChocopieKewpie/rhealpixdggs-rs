@@ -7,3 +7,10 @@ The upstream implementation is available under the MIT License or LGPL-3.0.
 This repository uses it under the MIT option. The original copyright notice is
 preserved in LICENSE.
 
+The New Zealand benchmark geometry in
+`benchmarks/data/new-zealand.geojson` is provided by SimpleMaps:
+
+    https://simplemaps.com/gis/country/nz
+
+It is redistributed under the Creative Commons Attribution 4.0 International
+license: https://creativecommons.org/licenses/by/4.0/

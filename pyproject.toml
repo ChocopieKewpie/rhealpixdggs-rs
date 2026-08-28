@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "rhealpixdggs-rs"
-version = "0.1.0a1"
+version = "0.8.0"
 description = "Fast rHEALPix discrete global grid indexing powered by Rust"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -12,7 +12,7 @@ license = "MIT"
 authors = [{ name = "James Ardo" }]
 keywords = ["DGGS", "rHEALPix", "geospatial", "Rust"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3",
     "Programming Language :: Rust",
     "Topic :: Scientific/Engineering :: GIS",
@@ -21,6 +21,19 @@ dependencies = ["numpy>=1.23"]
 
 [project.optional-dependencies]
 test = ["pytest>=8"]
+geo = [
+    "geopandas>=0.14,<2",
+    "pyogrio>=0.7,<1",
+    "shapely>=2,<3",
+]
+benchmark = [
+    "geopandas>=0.14,<2",
+    "pyogrio>=0.7,<1",
+    "shapely>=2,<3",
+]
+
+[project.scripts]
+rhealpix-to-gpkg = "rhealpixdggs.cli:main"
 
 [project.urls]
 Repository = "https://github.com/ChocopieKewpie/rhealpixdggs-rs"

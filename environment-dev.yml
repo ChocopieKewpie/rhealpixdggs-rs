@@ -1,0 +1,16 @@
+name: rhealpix-dev
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - rust>=1.85
+  - maturin>=1.9.4,<2
+  - numpy>=1.23
+  - pytest>=8
+  - geopandas>=0.14,<2
+  - pyogrio>=0.7,<1
+  - shapely>=2,<3
+  - pyproj
+  - proj
+  - proj-data

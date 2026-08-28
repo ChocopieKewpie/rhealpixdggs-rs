@@ -149,3 +149,113 @@ CPU-count, latency ranges, throughput, traced peak memory, and active threshold.
 The manual `M2 Benchmarks` GitHub Actions workflow runs the current
 implementation on Linux, Windows, and macOS and retains both Python JSON and
 Criterion output as build artifacts.
+
+## Windows x86_64 M2 record
+
+Measured on 2026-08-28 on Windows with an Intel Core i5-14400F (10 cores, 16
+logical processors), CPython 3.12.14, Rust 1.98.0, and the MSVC target. The
+source was the completed M2 benchmark package at commit `23133cb`; its package
+metadata still reported `0.1.0-alpha.1` before the 0.8.0 version bump. Values
+below are medians of five warmed calls.
+
+| Batch | Mode | Median latency | Throughput | Traced peak memory |
+|---:|---|---:|---:|---:|
+| 256 | Automatic | 45.2 µs | 5.66 M points/s | 6.1 KiB |
+| 4,096 | Automatic | 1.012 ms | 4.05 M points/s | 96.1 KiB |
+| 65,536 | Sequential | 13.719 ms | 4.78 M points/s | 1.50 MiB |
+| 65,536 | Automatic | 5.023 ms | 13.0 M points/s | 1.50 MiB |
+| 65,536 | Forced Rayon | 4.817 ms | 13.6 M points/s | 1.50 MiB |
+
+The automatic 65,536-point path was about **2.73× faster** than sequential on
+this machine. A 4,096-cell, 12-point geographic boundary batch took 1.775 ms.
+The independent Criterion run measured 21.38 million point conversions/s for
+forced Rayon versus 5.59 million/s sequential at 65,536 elements, and 5.19
+million versus 1.06 million cell boundaries/s at 4,096 elements. Differences
+between the Python and Criterion ratios are expected because the Python result
+includes array normalization and the extension boundary.
+
+Linux x86_64 and Windows x86_64 are now recorded. The macOS arm64 measurement
+is **TBD (hardware unavailable)**; it is a deferred portability record rather
+than a blocker for subsequent milestones.
+
+## New Zealand polygon → GeoPackage benchmark
+
+Version 0.8.0 adds two vector workloads that time input reading,
+centroid-based polygon coverage, cell-boundary generation, GeoPackage writing,
+and the complete pipeline separately:
+
+1. The default cross-implementation workload uses the deterministic
+   `new-zealand-simplified.geojson` fixture at resolution 6. It is intentionally
+   small enough for upstream Python 0.6.0 to complete.
+2. The Rust-scale workload uses the 17-part, 4,149-vertex
+   `new-zealand.geojson` fixture at resolution 8. It comes from SimpleMaps under
+   CC BY 4.0 and is not an authoritative national boundary. Upstream 0.6.0 is
+   not used for this tier because it is impractically slow.
+
+The current adapter emits exactly `4 * points_per_edge - 4` vertices for every
+cell. The 0.6.0 `Cell.boundary` path shortcuts quad and cap cells to four
+vertices, so the report records each boundary contract alongside the timings;
+the cell-set comparison remains exact and independent of output densification.
+
+Run the default comparison workload with the current implementation:
+
+```bash
+python tools/benchmark_nz_polygon.py \
+  --mode current \
+  --input benchmarks/data/new-zealand-simplified.geojson \
+  --resolution 6 \
+  --output-dir benchmark-results
+```
+
+For a direct comparison, install upstream 0.6.0 in a separate environment
+because both distributions use the `rhealpixdggs` import name. Run the driver
+from the 0.8.0 environment and point it at the legacy interpreter:
+
+```bash
+python tools/benchmark_nz_polygon.py \
+  --mode all \
+  --legacy-python /path/to/legacy/environment/bin/python \
+  --input benchmarks/data/new-zealand-simplified.geojson \
+  --resolution 6 \
+  --output-dir benchmark-results
+```
+
+Progress is written to standard error, so it remains visible when JSON standard
+output is redirected to a file. The detailed Rust-only tier is:
+
+```bash
+python tools/benchmark_nz_polygon.py \
+  --mode current \
+  --input benchmarks/data/new-zealand.geojson \
+  --resolution 8 \
+  --output-dir benchmark-results-r8
+```
+
+### Recorded Windows comparison
+
+The matched Windows run supplied on 2026-08-28 used CPython 3.12.14, one
+measured sample after warm-up, resolution 6, four points per edge, and 1,859
+output cells. Rust 0.8.0 and upstream Python 0.6.0 produced the same cell-ID
+checksum (`66d5bfd…f5478`).
+
+| Stage | Rust 0.8.0 | Python 0.6.0 | Speedup |
+|---|---:|---:|---:|
+| Input read | 1.592 ms | 1.954 ms | 1.23× |
+| Polygon coverage | 14.582 ms | 72.535 s | **4,974.46×** |
+| Cell boundaries | 67.014 ms | 637.669 ms | **9.52×** |
+| GeoPackage write | 21.401 ms | 29.265 ms | 1.37× |
+| End-to-end | 99.991 ms | 72.414 s | **724.20×** |
+
+The coverage stage's traced Python peak was 255 KiB for Rust and 1.39 MiB for
+legacy, a 5.60× ratio. Treat the exact latency ratios as indicative because
+the legacy cost made repeated sampling impractical; the several-orders-of-
+magnitude coverage difference is nevertheless unambiguous. The normalized raw
+record is in
+`benchmarks/results/nz-simple-r6-windows-x86_64.json`.
+
+The JSON report includes exact cell-set checksums and reports any differing
+cells before calculating speedups. It writes
+`new-zealand-rhealpix-rust.gpkg` and
+`new-zealand-rhealpix-legacy.gpkg` for visual inspection. Python
+`tracemalloc` values cover Python allocations, not all memory allocated inside
+GEOS, GDAL, NumPy, or Rust.

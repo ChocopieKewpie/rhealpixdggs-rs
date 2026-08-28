@@ -2,18 +2,25 @@
 
 ## Local setup
 
-Install Rust 1.85, Python 3.9 or newer, and maturin. Then run:
+Use the repository's Conda environment so Python, Rust/Cargo, Maturin, and the
+native geospatial dependencies come from one `conda-forge` toolchain:
 
 ```bash
+conda env create -f environment-dev.yml
+conda activate rhealpix-dev
+maturin develop --release
+
 cargo fmt --all --check
 cargo clippy --workspace --all-targets
 cargo test -p rhealpixdggs
 cargo check -p rhealpixdggs-python
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -e '.[test]'
 pytest
 ```
+
+On Windows, install the Visual Studio Build Tools **Desktop development with
+C++** workload, including MSVC x64/x86 and a Windows SDK, before creating the
+environment. The Conda `rust` package supplies `rustc` and Cargo, while the
+Microsoft workload supplies the required `link.exe` system linker.
 
 ## Compatibility changes
 

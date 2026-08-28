@@ -10,4 +10,5 @@ __pycache__/
 *.pyd
 dist/
 build/
-
+*.gpkg
+benchmark-results*/

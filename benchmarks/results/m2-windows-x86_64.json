@@ -1,0 +1,62 @@
+{
+  "schema": "rhealpixdggs-rs-m2-platform-record-v1",
+  "recorded_on": "2026-08-28",
+  "source_commit": "23133cb920e4f855c145d4f17e96437411fbafe1",
+  "reported_package_version": "0.1.0-alpha.1",
+  "environment": {
+    "cpu": "Intel(R) Core(TM) i5-14400F",
+    "physical_cores": 10,
+    "logical_cpus": 16,
+    "python": "3.12.14",
+    "rustc": "1.98.0 (88d9e12ae 2026-08-18)",
+    "rust_target": "x86_64-pc-windows-msvc",
+    "llvm": "22.1.8"
+  },
+  "python": {
+    "parallelism_available": true,
+    "point_parallel_threshold": 4096,
+    "scalar_point_median_ns": 627,
+    "points": {
+      "256": {
+        "sequential": {"median_ns": 47400, "points_per_second": 5400843, "traced_peak_bytes": 6210},
+        "automatic": {"median_ns": 45200, "points_per_second": 5663716, "traced_peak_bytes": 6210},
+        "parallel": {"median_ns": 171500, "points_per_second": 1492711, "traced_peak_bytes": 6210}
+      },
+      "4096": {
+        "sequential": {"median_ns": 794900, "points_per_second": 5152849, "traced_peak_bytes": 98370},
+        "automatic": {"median_ns": 1012200, "points_per_second": 4046631, "traced_peak_bytes": 98370},
+        "parallel": {"median_ns": 889400, "points_per_second": 4605351, "traced_peak_bytes": 98370}
+      },
+      "65536": {
+        "sequential": {"median_ns": 13719300, "points_per_second": 4776920, "traced_peak_bytes": 1572930},
+        "automatic": {"median_ns": 5022900, "points_per_second": 13047442, "traced_peak_bytes": 1572930},
+        "parallel": {"median_ns": 4817400, "points_per_second": 13604018, "traced_peak_bytes": 1572930}
+      }
+    },
+    "boundaries": {
+      "count": 4096,
+      "points_per_edge": 4,
+      "median_ns": 1775300,
+      "traced_peak_bytes": 819266,
+      "output_bytes": 786432
+    }
+  },
+  "criterion": {
+    "lonlat_to_cell_65536": {
+      "sequential_median_ns": 11726000,
+      "parallel_median_ns": 3065400,
+      "sequential_elements_per_second": 5589000,
+      "parallel_elements_per_second": 21379000
+    },
+    "boundary_n4_4096": {
+      "sequential_median_ns": 3856800,
+      "parallel_median_ns": 788670,
+      "sequential_elements_per_second": 1062000,
+      "parallel_elements_per_second": 5193500
+    }
+  },
+  "notes": [
+    "The performance source predates the metadata-only 0.8.0 version bump.",
+    "Python tracemalloc reports Python-managed allocations, not complete process RSS."
+  ]
+}

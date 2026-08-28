@@ -1,0 +1,63 @@
+{
+  "schema": "rhealpixdggs-rs-nz-polygon-platform-record-v1",
+  "recorded_on": "2026-08-28",
+  "source_archive": "rhealpixdggs-rs-0.8.0-nz-gpkg-benchmark",
+  "sample_count": 1,
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "machine": "AMD64",
+    "processor": "Intel64 Family 6 Model 197 Stepping 2, GenuineIntel",
+    "logical_cpus": 14,
+    "python": "3.12.14"
+  },
+  "workload": {
+    "input": "benchmarks/data/new-zealand-simplified.geojson",
+    "input_sha256": "4d347a6d7490c44b51d302d6e581bdb2ba7b823d5a4bf6d2daea0f9b5b166b10",
+    "resolution": 6,
+    "points_per_edge": 4,
+    "cell_count": 1859,
+    "cell_ids_sha256": "66d5bfd3fac5379973bb0d7304598c88ca86ad5d08599c01258dad5e108f5478"
+  },
+  "rust": {
+    "implementation": "rhealpixdggs-rs 0.8.0",
+    "boundary_contract": "exact 4 * points_per_edge - 4 vertices for every cell",
+    "output_bytes": 798720,
+    "output_sha256": "0f4b74672037f0401a33ce0f7f1b9a85fc54b895ce72d1a80c49976d2ac9f25d",
+    "timings": {
+      "read": {"median_ns": 1591600, "traced_peak_bytes": 18223},
+      "cover": {"median_ns": 14581500, "traced_peak_bytes": 260720},
+      "boundaries": {"median_ns": 67013600, "traced_peak_bytes": 723578},
+      "write_gpkg": {"median_ns": 21400800, "traced_peak_bytes": 536955},
+      "end_to_end": {"median_ns": 99991200, "traced_peak_bytes": 829674}
+    }
+  },
+  "legacy": {
+    "implementation": "rHEALPixDGGS 0.6.0",
+    "boundary_contract": "0.6.0 Cell.boundary; quad/cap cells use four-vertex shortcut",
+    "output_bytes": 667648,
+    "output_sha256": "fbe1d194926e392dc8144a6e814c8d5022ca20d2e1030eb27b634b442fc0f65b",
+    "timings": {
+      "read": {"median_ns": 1953500, "traced_peak_bytes": 18015},
+      "cover": {"median_ns": 72535014100, "traced_peak_bytes": 1461228},
+      "boundaries": {"median_ns": 637669400, "traced_peak_bytes": 706547},
+      "write_gpkg": {"median_ns": 29264600, "traced_peak_bytes": 413292},
+      "end_to_end": {"median_ns": 72414056700, "traced_peak_bytes": 1463910}
+    }
+  },
+  "comparison": {
+    "same_cells": true,
+    "read_speedup": 1.227,
+    "cover_speedup": 4974.455,
+    "boundary_speedup": 9.516,
+    "write_gpkg_speedup": 1.367,
+    "end_to_end_speedup": 724.204,
+    "cover_traced_peak_memory_ratio_legacy_over_rust": 5.605,
+    "end_to_end_traced_peak_memory_ratio_legacy_over_rust": 1.764
+  },
+  "notes": [
+    "Cell count and cell-ID checksum match exactly.",
+    "Each median is one measured sample after a warm-up; the harness also performs a separate tracemalloc call.",
+    "Python tracemalloc does not include all native allocations in Rust, GEOS, GDAL, or NumPy.",
+    "GeoPackage sizes differ because the two implementations intentionally use different boundary densification contracts."
+  ]
+}

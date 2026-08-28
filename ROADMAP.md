@@ -32,22 +32,24 @@ numerical outputs within explicit error budgets over generated point,
 boundary, antimeridian, polar, traversal, coverage, and facade fixtures. See
 [`docs/UPSTREAM_COMPATIBILITY.md`](docs/UPSTREAM_COMPATIBILITY.md).
 
-## M2 — Performance API (in progress)
+## M2 — Performance API (macOS measurement deferred)
 
 - [x] Criterion core baseline and reproducible comparison with released `rhealpixdggs-py` 0.6.0
 - [x] NumPy array input/output without per-point Python calls
 - [x] Release the Python GIL around bulk operations
 - [x] Optional Rayon parallelism above measured operation-specific crossover sizes
 - [x] Batch cell-to-boundary and region-cover operations
+- [x] Reproducible New Zealand polygon → GeoPackage comparison harness
+- [x] Record the 0.8.0 versus 0.6.0 New Zealand result on Windows
 - [ ] Benchmark memory, latency, and throughput on all target operating systems
   - [x] Linux x86_64
-  - [ ] Windows x86_64
-  - [ ] macOS arm64
+  - [x] Windows x86_64
+  - [ ] macOS arm64 — **TBD (hardware unavailable)**
 
-The cross-platform benchmark workflow and JSON-emitting Python harness are in
-place. The remaining M2 work is to run the workflow on GitHub-hosted Windows
-and macOS hardware and publish those artifacts; local Linux measurements are
-documented in [`BENCHMARKS.md`](BENCHMARKS.md).
+The JSON-emitting Python harness now has published Linux and Windows records.
+The macOS arm64 run remains visible as a deferred portability measurement and
+does not block work on the next milestones. The manual workflow remains ready
+for a future macOS runner.
 
 Performance claims will be published only with reproducible fixtures and both
 single-point and bulk measurements.
@@ -63,7 +65,8 @@ single-point and bulk measurements.
 
 - [ ] Track OGC Topic 21 / ISO 19170-1 conformance work
 - [ ] GeoArrow and Apache Arrow batch interfaces
-- [ ] GeoJSON/WKT adapters outside the dependency-free core
+- [x] GeoPandas vector input and GeoPackage output outside the dependency-free core
+- [ ] Direct GeoJSON/WKT and streaming adapters
 - [ ] PyPI, crates.io, conda-forge, and platform wheel release automation
 
 ## Open design decisions
@@ -72,5 +75,5 @@ single-point and bulk measurements.
    arbitrary upstream `N_side` values.
 2. Whether the cross-language public integer ID remains resolution-major or
    moves to a reserved bit layout before 1.0. String IDs remain canonical.
-3. Whether high-level polygon coverage belongs here or in a companion crate
-   integrating GEOS/geo/GeoArrow.
+3. Whether future high-level geometry operations remain Python adapters or
+   move into a companion Rust crate integrating `geo`/GEOS/GeoArrow.

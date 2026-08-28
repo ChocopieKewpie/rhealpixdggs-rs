@@ -3,8 +3,8 @@
 A Rust-first implementation of the aperture-9 rHEALPix Discrete Global Grid
 System, with Python as the first supported language binding.
 
-> **Status: early alpha; M1 semantic parity is complete and the M2 bulk API is
-> available.** Point indexing,
+> **Status: pre-1.0; version 0.8.0 includes completed M1 semantic parity, the
+> M2 bulk API, and optional GeoPackage polygon conversion.** Point indexing,
 > projection, shape-aware vertices,
 > exact densified boundaries, planar and ellipsoidal neighbours, hierarchy
 > traversal and ordering, equal-area metrics, stable integer IDs, dependency-
@@ -24,6 +24,7 @@ bindings/python/       PyO3 extension module
 python/rhealpixdggs/   Python package and type information
 tests/python/          Python API and upstream golden tests
 tests/fixtures/        Versioned cross-language conformance corpora
+benchmarks/data/       Reproducible non-authoritative benchmark fixtures
 tools/                 Deterministic corpus and development utilities
 ```
 
@@ -34,12 +35,18 @@ interchange contract for future C, JavaScript/Wasm, Java, and R bindings.
 ## Python quick start
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate       # Windows: .venv\Scripts\activate
-python -m pip install maturin pytest
-maturin develop
+conda env create -f environment-dev.yml
+conda activate rhealpix-dev
+maturin develop --release
 pytest
 ```
+
+The development environment installs Python, Rust/Cargo, Maturin, and the
+geospatial benchmark stack from `conda-forge`. Keeping PROJ, PyProj, GDAL,
+Pyogrio, and GeoPandas in the same Conda environment avoids incompatible
+native libraries. On Windows, first install the Visual Studio Build Tools
+**Desktop development with C++** workload (MSVC x64/x86 and a Windows SDK);
+VS Code alone does not provide `link.exe`.
 
 ```python
 import rhealpixdggs as rh
@@ -97,6 +104,30 @@ Bulk computation releases the GIL. `parallel=None` automatically enables
 Rayon above benchmarked crossover sizes; pass `parallel=True` or `False` to
 override that policy.
 
+Install the optional geospatial adapter to convert Polygon/MultiPolygon vector
+data directly to an EPSG:4326 GeoPackage:
+
+```bash
+python -m pip install -e '.[geo]'
+rhealpix-to-gpkg nz-boundary.gpkg nz-rhealpix.gpkg --resolution 6
+```
+
+```python
+from rhealpixdggs.geo import polygon_file_to_geopackage
+
+cells = polygon_file_to_geopackage(
+    "nz-boundary.gpkg",
+    "nz-rhealpix.gpkg",
+    resolution=6,
+)
+print(f"wrote {len(cells):,} cells")
+```
+
+Inputs may use any declared CRS; they are reprojected to WGS84 and dissolved
+before coverage. Output cells include `cell_id`, `resolution`, `area_m2`, and
+antimeridian-safe MultiPolygon geometry. Existing outputs are protected unless
+the caller explicitly passes `overwrite=True` or `--overwrite`.
+
 Existing `rhealpixdggs-py` code can start migrating through the object facade,
 which retains the upstream `(longitude, latitude)` convention:
 
@@ -135,7 +166,14 @@ On the development benchmark machine, a warmed Python point-to-cell call took
 0.485 µs here versus 20.285 µs in `rhealpixdggs-py` 0.6.0—about **41.8× faster**
 for that specific single-point operation. Rust-core point indexing measured
 about 170 ns. See [BENCHMARKS.md](BENCHMARKS.md) for the setup and important
-limits of this early comparison.
+limits of this early comparison, including the recorded Windows M2 run and the
+reproducible New Zealand polygon workload.
+
+On the matched Windows New Zealand workload, both implementations selected the
+same 1,859 resolution-6 cells. Rust 0.8.0 completed polygon coverage in
+14.582 ms versus 72.535 s upstream (**4,974× faster**) and the full GeoPackage
+pipeline in 99.991 ms versus 72.414 s (**724× faster**). These values are one
+measured sample after warm-up because repeated legacy runs were impractical.
 
 ## Rust quick start
 
@@ -171,6 +209,7 @@ let (longitude, latitude) = dggs.cell_to_lonlat(&cell)?;
 | Equal-area cell metric | Yes | Yes | Golden-tested |
 | Versioned upstream conformance corpus | Yes | Yes | 1,583 shared cases from upstream 0.6.0 |
 | Rectangle, polyline, and polygon coverage | Yes | Yes | Shared upstream corpus plus antimeridian corrections |
+| Polygon vector input → GeoPackage cells | Core coverage | Optional `geo` extra | Same centroid-selection contract; benchmarked separately |
 | `RHEALPixDGGS` / `Cell` deterministic object facade | Core-backed | Yes | M1 complete for documented WGS84_003 boundary |
 | Custom aperture / `N_side` | Planned decision | — | No |
 
@@ -187,9 +226,10 @@ python tools/generate_upstream_coverage_corpus.py \
   --upstream-root ../upstream-src --check
 python tools/generate_upstream_facade_corpus.py \
   --upstream-root ../upstream-src --check
-maturin develop
+maturin develop --release
 pytest
 cargo bench -p rhealpixdggs
+python tools/benchmark_nz_polygon.py --help
 ```
 
 The Rust compiler is pinned in `rust-toolchain.toml`. The Python wheel uses

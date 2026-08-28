@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 (unreleased)
 
 - Added region and ellipsoidal shape classification in the Rust core.
 - Added upstream-compatible geographic vertex ordering and optional dart
@@ -29,6 +29,21 @@
   `rhealpixdggs-py` 0.6.0 and a manual three-platform benchmark workflow.
 - Documented and regression-tested the numerically stable authalic-latitude
   series evaluated by Gilić and Gašparović (2025).
+- Added an optional GeoPandas/Shapely adapter for Polygon/MultiPolygon coverage,
+  bulk cell-boundary construction, antimeridian-safe geometry, and GeoPackage
+  output.
+- Added a detailed SimpleMaps New Zealand MultiPolygon (CC BY 4.0) as the
+  Rust-scale resolution-8 workload, alongside a deterministic lightweight
+  resolution-6 fixture for the isolated benchmark against `rHEALPixDGGS`
+  0.6.0.
+- Recorded the matched Windows polygon result: identical 1,859-cell output,
+  4,974× faster coverage, and 724× faster end-to-end conversion in Rust 0.8.0
+  than upstream Python 0.6.0 (one measured sample after warm-up).
+- Fixed CI and benchmark workflows to build and install wheels instead of
+  calling `maturin develop` without an activated virtual environment, and
+  added a dedicated GeoPackage adapter test job.
+- Recorded the Windows x86_64 M2 result and explicitly deferred macOS arm64 as
+  TBD until suitable hardware or a hosted run is available.
 
 ## 0.1.0-alpha.1
 
