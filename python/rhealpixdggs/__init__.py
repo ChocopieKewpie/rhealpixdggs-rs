@@ -39,6 +39,7 @@ from ._rhealpixdggs import (
     uncompact_cells,
 )
 from .compat import Cell, RHEALPixDGGS, WGS84_003
+from . import numpy
 
 __all__ = [
     "MAX_RESOLUTION",
@@ -46,6 +47,7 @@ __all__ = [
     "Cell",
     "RHEALPixDGGS",
     "WGS84_003",
+    "numpy",
     "bbox_to_cells",
     "cell_area",
     "cell_to_boundary",

@@ -10,10 +10,13 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from functools import total_ordering
 from itertools import product
+from math import ceil, pi
+import sys
 from typing import Final
 
 from ._rhealpixdggs import (
     MAX_RESOLUTION,
+    _combine_triangles,
     _compare_cells,
     _cell_boundary,
     _cell_centroid,
@@ -23,8 +26,13 @@ from ._rhealpixdggs import (
     _cell_neighbors,
     _cell_nucleus,
     _cell_vertices,
+    _cell_vertex,
     _cells_from_line,
     _cells_from_region,
+    _project,
+    _triangle,
+    _xyz,
+    _xyz_cube,
     cell_to_level_order_index,
     cell_to_post_order_index,
     cell_to_predecessor,
@@ -92,6 +100,69 @@ class RHEALPixDGGS:
             and self.south_square == other.south_square
         )
 
+    def healpix(
+        self, u: float, v: float, inverse: bool = False
+    ) -> tuple[float, float]:
+        """Apply the WGS84 HEALPix projection or its inverse."""
+        return _project((u, v), "healpix", inverse)
+
+    def rhealpix(
+        self,
+        u: float,
+        v: float,
+        inverse: bool = False,
+        region: str = "none",
+    ) -> tuple[float, float]:
+        """Apply this grid's rHEALPix projection or its inverse."""
+        return _project(
+            (u, v),
+            "rhealpix",
+            inverse,
+            region,
+            self.north_square,
+            self.south_square,
+        )
+
+    def combine_triangles(
+        self,
+        u: float,
+        v: float,
+        inverse: bool = False,
+        region: str = "none",
+    ) -> tuple[float, float]:
+        """Transform between the HEALPix and rHEALPix projected images."""
+        return _combine_triangles(
+            (u, v),
+            inverse,
+            region,
+            self.north_square,
+            self.south_square,
+        )
+
+    def triangle(
+        self, x: float, y: float, inverse: bool = True
+    ) -> tuple[int | None, str]:
+        """Return the HEALPix polar triangle and geographic region."""
+        return _triangle(
+            (x, y), inverse, self.north_square, self.south_square
+        )
+
+    def xyz(
+        self, u: float, v: float, lonlat: bool = False
+    ) -> tuple[float, float, float]:
+        """Return geocentric Cartesian coordinates on WGS84."""
+        return _xyz(
+            (u, v), lonlat, self.north_square, self.south_square
+        )
+
+    def xyz_cube(
+        self, u: float, v: float, lonlat: bool = False
+    ) -> tuple[float, float, float]:
+        """Fold the rHEALPix image onto a cube centred at the origin."""
+        return _xyz_cube(
+            (u, v), lonlat, self.north_square, self.south_square
+        )
+
     def cell(
         self,
         suid: str | Sequence[str | int] | None = None,
@@ -125,6 +196,163 @@ class RHEALPixDGGS:
             self.south_square,
         )
         return None if identifier is None else Cell(self, identifier)
+
+    def interval(self, a: Cell, b: Cell) -> Iterator[Cell]:
+        """Yield the fixed-resolution post-order interval ``[a, b]``."""
+        resolution = max(a.resolution, b.resolution)
+        cell = (
+            a.successor(resolution)
+            if a.resolution < resolution
+            else Cell(self, a.suid[: resolution + 1])
+        )
+        while cell is not None and cell <= b:
+            yield cell
+            cell = cell.successor(resolution)
+
+    def cell_from_region(
+        self,
+        upper_left: tuple[float, float],
+        lower_right: tuple[float, float],
+        plane: bool = True,
+    ) -> Cell | None:
+        """Return the smallest cell wholly containing an axis-aligned region."""
+        if not plane:
+            if upper_left == (-180.0, 90.0) or lower_right == (-180.0, -90.0):
+                latitude = (
+                    lower_right[1]
+                    if lower_right[1] != -90.0
+                    else upper_left[1]
+                )
+                vertices = [
+                    (-135.0, latitude),
+                    (-45.0, latitude),
+                    (45.0, latitude),
+                    (135.0, latitude),
+                ]
+            else:
+                vertices = [
+                    upper_left,
+                    (upper_left[0], lower_right[1]),
+                    lower_right,
+                    (lower_right[0], upper_left[1]),
+                ]
+            projected = [self.rhealpix(*point) for point in vertices]
+            upper_left = (
+                min(point[0] for point in projected),
+                max(point[1] for point in projected),
+            )
+            lower_right = (
+                max(point[0] for point in projected),
+                min(point[1] for point in projected),
+            )
+
+        upper = self.cell_from_point(MAX_RESOLUTION, upper_left)
+        lower = self.cell_from_point(MAX_RESOLUTION, lower_right)
+        if upper is None or lower is None:
+            return None
+        common = 0
+        for left, right in zip(upper.suid, lower.suid):
+            if left != right:
+                break
+            common += 1
+        return None if common == 0 else Cell(self, upper.suid[:common])
+
+    def cell_latitudes(
+        self,
+        resolution: int,
+        phi_min: float,
+        phi_max: float,
+        nucleus: bool = True,
+        plane: bool = True,
+    ) -> list[float]:
+        """Return cell nucleus or boundary latitudes inside an open interval."""
+        if phi_min > phi_max:
+            return []
+        root_width = self.cell_width(0)
+        assert root_width is not None
+        radius = 2.0 * root_width / pi
+        if plane:
+            y_min, y_max = phi_min, phi_max
+        else:
+            y_min = self.healpix(0.0, phi_min)[1]
+            y_max = self.healpix(0.0, phi_max)[1]
+        width = self.cell_width(resolution)
+        assert width is not None
+        y = -radius * pi / 2.0 + (width if nucleus else width / 2.0)
+        if y <= y_min:
+            difference = y_min - y
+            y = max(y + ceil(difference / width) * width, y + width)
+        result: list[float] = []
+        while y < y_max:
+            result.append(y)
+            y += width
+        if plane:
+            return result
+        return [self.healpix(radius * pi / 4.0, y, inverse=True)[1] for y in result]
+
+    def cells_from_meridian(
+        self, resolution: int, lam: float, phi_min: float, phi_max: float
+    ) -> list[Cell]:
+        """Return cells intersecting a geographic meridian segment."""
+        if phi_min > phi_max:
+            return []
+        start = self.cell_from_point(resolution, (lam, phi_max), plane=False)
+        end = self.cell_from_point(resolution, (lam, phi_min), plane=False)
+        if start is None or end is None:
+            return []
+        if start == end:
+            return [start]
+        latitudes = self.cell_latitudes(
+            resolution, phi_min, phi_max, nucleus=True, plane=False
+        )
+        if not latitudes:
+            return [start, end]
+        result: list[Cell] = []
+        for latitude in reversed(latitudes):
+            cell = self.cell_from_point(resolution, (lam, latitude), plane=False)
+            assert cell is not None
+            new_cells = [cell]
+            if cell.ellipsoidal_shape in {"dart", "skew_quad"}:
+                west = cell.neighbor("west", plane=False)
+                east = cell.neighbor("east", plane=False)
+                if west is not None and west.intersects_meridian(lam):
+                    new_cells = [west, cell]
+                elif east is not None and east.intersects_meridian(lam):
+                    new_cells = [cell, east]
+            result.extend(new_cells)
+        if start not in result[:2]:
+            result.insert(0, start)
+        if end not in result[-2:]:
+            result.append(end)
+        return result
+
+    def cells_from_parallel(
+        self, resolution: int, phi: float, lam_min: float, lam_max: float
+    ) -> list[Cell]:
+        """Return cells intersecting a geographic parallel segment."""
+        if lam_min > lam_max:
+            return []
+        start = self.cell_from_point(resolution, (lam_min, phi), plane=False)
+        end = self.cell_from_point(resolution, (lam_max, phi), plane=False)
+        if start is None or end is None:
+            return []
+        if start == end:
+            if start.ellipsoidal_shape == "cap" or lam_max - lam_min < 90.0:
+                return [start]
+            neighbor = start.neighbor("west", plane=False)
+            if neighbor is None:
+                return [start]
+            end = neighbor
+        result: list[Cell] = []
+        current = start
+        while current != end:
+            result.append(current)
+            neighbor = current.neighbor("east", plane=False)
+            if neighbor is None:
+                raise RuntimeError("parallel traversal reached a cell without an east neighbor")
+            current = neighbor
+        result.append(end)
+        return result
 
     def cells_from_region(
         self,
@@ -166,6 +394,38 @@ class RHEALPixDGGS:
             )
         ]
 
+    def minimal_cover(
+        self,
+        resolution: int,
+        points: Sequence[tuple[float, float]],
+        plane: bool = True,
+    ) -> list[Cell]:
+        """Return the distinct resolution cells containing ``points``."""
+        cover: dict[str, Cell] = {}
+        for point in points:
+            cell = self.cell_from_point(resolution, point, plane)
+            if cell is not None:
+                cover[str(cell)] = cell
+        return list(cover.values())
+
+    @staticmethod
+    def antimeridian_check_and_flip(
+        vertices: list[tuple[float, float]], plane: bool = True
+    ) -> list[tuple[float, float]]:
+        """Normalize antimeridian vertices to the side used by their peers."""
+        if plane:
+            return vertices
+        longitudes = [point[0] for point in vertices]
+        if 180.0 not in longitudes and -180.0 not in longitudes:
+            return vertices
+        check = 180.0 if 180.0 in longitudes else -180.0
+        if all(value == check or value * check >= 0.0 for value in longitudes):
+            return vertices
+        return [
+            (-longitude if longitude == check else longitude, latitude)
+            for longitude, latitude in vertices
+        ]
+
     def grid(self, resolution: int) -> Iterator[Cell]:
         if not 0 <= resolution <= MAX_RESOLUTION:
             raise ValueError(f"resolution must be in [0, {MAX_RESOLUTION}]")
@@ -188,6 +448,19 @@ class RHEALPixDGGS:
         value = _cell_metric(resolution, "area", plane)
         assert value is not None
         return value
+
+    def area_error_budget(self) -> dict[int, dict[str, float]]:
+        """Return conservative floating-point tolerances for cell areas."""
+        relative = 10.0 * sys.float_info.epsilon
+        return {
+            resolution: {
+                "cell_area_m2": area,
+                "abs_tolerance": area * relative,
+                "rel_tolerance": relative,
+            }
+            for resolution in range(MAX_RESOLUTION + 1)
+            if (area := self.cell_area(resolution, plane=False)) is not None
+        }
 
 
 @total_ordering
@@ -291,6 +564,126 @@ class Cell:
             self.north_square,
             self.south_square,
         )
+
+    def suid_rowcol(
+        self,
+    ) -> tuple[tuple[str | int, ...], tuple[str | int, ...]]:
+        """Return the row and column SUID components."""
+        rows: list[str | int] = [self.suid[0]]
+        columns: list[str | int] = [self.suid[0]]
+        for digit in self.suid[1:]:
+            assert isinstance(digit, int)
+            rows.append(digit // 3)
+            columns.append(digit % 3)
+        return tuple(rows), tuple(columns)
+
+    def subcell(self, other: Cell) -> bool:
+        """Return whether this cell is a descendant of ``other``."""
+        return self._identifier.startswith(other._identifier)
+
+    @staticmethod
+    def rotate_entry(x: str | int, quarter_turns: int) -> str | int:
+        """Rotate one aperture-9 digit anticlockwise."""
+        if isinstance(x, str):
+            return x
+        row, column = divmod(x, 3)
+        for _ in range(quarter_turns % 4):
+            row, column = column, 2 - row
+        return row * 3 + column
+
+    def rotate(self, quarter_turns: int) -> Cell:
+        """Rotate every hierarchy digit anticlockwise."""
+        return Cell(
+            self.rdggs,
+            tuple(self.rotate_entry(value, quarter_turns) for value in self.suid),
+        )
+
+    def ul_vertex(self, plane: bool = True) -> tuple[float, float]:
+        return _cell_vertex(
+            self._identifier,
+            "upper_left",
+            plane,
+            self.north_square,
+            self.south_square,
+        )
+
+    def nw_vertex(self, plane: bool = True) -> tuple[float, float]:
+        return _cell_vertex(
+            self._identifier,
+            "northwest",
+            plane,
+            self.north_square,
+            self.south_square,
+        )
+
+    def xy_range(self) -> tuple[tuple[float, float], tuple[float, float]]:
+        upper_left = self.ul_vertex()
+        width = self.width()
+        assert width is not None
+        return (
+            (upper_left[0], upper_left[0] + width),
+            (upper_left[1] - width, upper_left[1]),
+        )
+
+    def interior(
+        self, n: int = 2, plane: bool = True, flatten: bool = False
+    ) -> list[tuple[float, float]] | list[list[tuple[float, float]]]:
+        """Return an upstream-compatible interior point grid."""
+        if n < 2:
+            raise ValueError("n must be at least 2")
+        upper_left = self.ul_vertex()
+        width = self.width()
+        assert width is not None
+        epsilon = 1e-6
+        delta = (width - 2.0 * epsilon) / (n - 1)
+
+        def point(row: int, column: int) -> tuple[float, float]:
+            projected = (
+                upper_left[0] + epsilon + delta * column,
+                upper_left[1] - epsilon - delta * row,
+            )
+            return (
+                projected
+                if plane
+                else self.rdggs.rhealpix(*projected, inverse=True)
+            )
+
+        if flatten:
+            return [point(row, column) for column in range(n) for row in range(n)]
+        return [[point(row, column) for column in range(n)] for row in range(n)]
+
+    def contains(self, p: tuple[float, float], plane: bool = True) -> bool:
+        return self.rdggs.cell_from_point(self.resolution, p, plane) == self
+
+    def intersects_meridian(self, lam: float) -> bool:
+        if self.ellipsoidal_shape == "cap":
+            return True
+        vertices = self.vertices(plane=False)
+        longitude_min = min(point[0] for point in vertices)
+        longitude_max = max(point[0] for point in vertices)
+        if abs(longitude_min - longitude_max) > 180.0:
+            longitude_min = -longitude_max
+            return longitude_max <= lam or lam <= longitude_min
+        return longitude_min <= lam <= longitude_max
+
+    def intersects_parallel(self, phi: float) -> bool:
+        vertices = self.vertices(plane=False)
+        latitude_min = min(point[1] for point in vertices)
+        latitude_max = max(point[1] for point in vertices)
+        if self.ellipsoidal_shape == "cap":
+            return (
+                phi >= latitude_min
+                if self.region() == "north_polar"
+                else phi <= latitude_max
+            )
+        return latitude_min <= phi <= latitude_max
+
+    def overlaps(self, other_cell: Cell) -> bool:
+        length = min(len(self._identifier), len(other_cell._identifier))
+        return self._identifier[:length] == other_cell._identifier[:length]
+
+    def region_overlaps(self, region: Sequence[Cell]) -> bool:
+        return any(self.overlaps(cell) for cell in region)
 
     def index(self, order: str = "resolution") -> int:
         """Return the level- or post-order index of this cell."""

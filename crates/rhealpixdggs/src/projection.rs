@@ -30,6 +30,21 @@ pub(crate) fn forward(
     Ok((x * radius, y * radius))
 }
 
+/// Project longitude/latitude degrees to the HEALPix plane in metres.
+pub(crate) fn healpix_forward(
+    ellipsoid: Ellipsoid,
+    longitude: f64,
+    latitude: f64,
+) -> Result<(f64, f64)> {
+    validate_lonlat(longitude, latitude)?;
+    let lambda = wrap_longitude(longitude.to_radians());
+    let phi = latitude.to_radians();
+    let beta = authalic_latitude(phi, ellipsoid.eccentricity());
+    let (x, y) = healpix_sphere(lambda, beta);
+    let radius = ellipsoid.authalic_radius();
+    Ok((x * radius, y * radius))
+}
+
 /// Invert rHEALPix metres to longitude/latitude degrees.
 pub(crate) fn inverse(
     ellipsoid: Ellipsoid,
@@ -39,6 +54,19 @@ pub(crate) fn inverse(
     south_square: u8,
 ) -> Result<(f64, f64)> {
     inverse_with_region(ellipsoid, x, y, north_square, south_square, None)
+}
+
+/// Invert HEALPix metres to longitude/latitude degrees.
+pub(crate) fn healpix_inverse(ellipsoid: Ellipsoid, x: f64, y: f64) -> Result<(f64, f64)> {
+    if !x.is_finite() || !y.is_finite() {
+        return Err(Error::InvalidCoordinate(
+            "projected coordinates must be finite".to_owned(),
+        ));
+    }
+    let radius = ellipsoid.authalic_radius();
+    let (lambda, beta) = healpix_sphere_inverse(x / radius, y / radius)?;
+    let phi = common_latitude(beta, ellipsoid.eccentricity());
+    Ok((wrap_longitude(lambda).to_degrees(), phi.to_degrees()))
 }
 
 /// Invert rHEALPix metres while resolving face-boundary rounding with an
@@ -113,6 +141,10 @@ fn wrap_longitude(longitude: f64) -> f64 {
     (longitude + PI).rem_euclid(2.0 * PI) - PI
 }
 
+// Sixth-order third-flattening series from Karney's auxiliary-latitude
+// treatment, evaluated in nested form. Gilić and Gašparović (2025) show that
+// this formulation is materially faster and more accurate than the direct
+// equations previously used by rhealpixdggs-py.
 fn authalic_latitude(phi: f64, eccentricity: f64) -> f64 {
     if eccentricity == 0.0 {
         return phi;
@@ -146,6 +178,8 @@ fn authalic_latitude(phi: f64, eccentricity: f64) -> f64 {
         + n.powi(6) * (570_284_222.0 / 1_915_538_625.0) * (12.0 * phi).sin()
 }
 
+// Inverse sixth-order third-flattening series paired with
+// `authalic_latitude`; see docs/NUMERICAL_ACCURACY.md.
 fn common_latitude(beta: f64, eccentricity: f64) -> f64 {
     if eccentricity == 0.0 {
         return beta;
@@ -297,7 +331,7 @@ fn triangle_number_with_region(
     (number, region)
 }
 
-fn combine_triangles(
+pub(crate) fn combine_triangles(
     x: f64,
     y: f64,
     north_square: u8,
@@ -414,6 +448,35 @@ mod tests {
             let projected = forward(ellipsoid, point.0, point.1, 0, 0).unwrap();
             let result = inverse(ellipsoid, projected.0, projected.1, 0, 0).unwrap();
             assert_close(result, point, 2e-10);
+        }
+    }
+
+    #[test]
+    fn optimized_authalic_series_matches_high_precision_wgs84_references() {
+        // References were evaluated at 80 decimal digits from the exact q(phi)
+        // definition. They include the equatorial cancellation and near-pole
+        // cases highlighted by the numerical-stability literature.
+        let eccentricity = Ellipsoid::wgs84().eccentricity();
+        let references = [
+            (0.000_001_f64, 1.737_527_784_588_929_3e-8_f64),
+            (1.0, 0.017_375_293_597_840_16),
+            (30.0, 0.521_661_408_370_140_5),
+            (41.937_853_910_160_14, 0.729_727_656_226_966_3),
+            (60.0, 1.045_256_493_215_364_7),
+            (89.999_999, 1.570_796_309_263_292),
+        ];
+        for (geodetic_degrees, expected_authalic) in references {
+            let geodetic = geodetic_degrees.to_radians();
+            let authalic = authalic_latitude(geodetic, eccentricity);
+            assert!(
+                (authalic - expected_authalic).abs() <= 2.0 * f64::EPSILON,
+                "{geodetic_degrees}: {authalic:.17e} != {expected_authalic:.17e}"
+            );
+            let recovered = common_latitude(authalic, eccentricity);
+            assert!(
+                (recovered - geodetic).abs() <= 4.0 * f64::EPSILON,
+                "{geodetic_degrees}: {recovered:.17e} != {geodetic:.17e}"
+            );
         }
     }
 }

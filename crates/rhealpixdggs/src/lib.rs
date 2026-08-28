@@ -4,6 +4,7 @@
 //! Language bindings can therefore share one implementation and one stable
 //! integer/string cell-ID model.
 
+mod bulk;
 mod cell;
 mod coverage;
 mod dggs;
@@ -11,6 +12,10 @@ mod ellipsoid;
 mod error;
 mod projection;
 
+pub use bulk::{
+    BOUNDARY_PARALLEL_THRESHOLD, POINT_PARALLEL_THRESHOLD, REGION_PARALLEL_THRESHOLD,
+    parallelism_available,
+};
 pub use cell::{
     CellId, CellShape, Direction, EllipsoidalDirection, Face, Region, compact_cells,
     uncompact_cells,

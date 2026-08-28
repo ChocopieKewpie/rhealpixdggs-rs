@@ -6,9 +6,11 @@ use std::str::FromStr;
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 use rhealpixdggs::{
-    CellId, Direction, Ellipsoid, EllipsoidalDirection, Error, MAX_RESOLUTION, RhealpixDggs,
-    compact_cells as compact_core, uncompact_cells as uncompact_core,
+    BOUNDARY_PARALLEL_THRESHOLD, CellId, Direction, Ellipsoid, EllipsoidalDirection, Error,
+    MAX_RESOLUTION, POINT_PARALLEL_THRESHOLD, REGION_PARALLEL_THRESHOLD, Region, RhealpixDggs,
+    compact_cells as compact_core, parallelism_available, uncompact_cells as uncompact_core,
 };
 
 fn value_error(error: Error) -> PyErr {
@@ -30,16 +32,199 @@ fn latlng_to_cell(latitude: f64, longitude: f64, resolution: u8) -> PyResult<Str
 
 /// Convert many `(latitude, longitude)` pairs to WGS84_003 cell IDs.
 #[pyfunction]
-fn latlngs_to_cells(coordinates: Vec<(f64, f64)>, resolution: u8) -> PyResult<Vec<String>> {
+fn latlngs_to_cells(
+    py: Python<'_>,
+    coordinates: Vec<(f64, f64)>,
+    resolution: u8,
+) -> PyResult<Vec<String>> {
     let dggs = RhealpixDggs::wgs84_003();
-    coordinates
-        .into_iter()
-        .map(|(latitude, longitude)| {
-            dggs.cell_from_lonlat(longitude, latitude, resolution)
-                .map(|cell| cell.to_string())
-                .map_err(value_error)
+    let use_parallel = coordinates.len() >= POINT_PARALLEL_THRESHOLD;
+    py.detach(move || {
+        let coordinates: Vec<_> = coordinates
+            .into_iter()
+            .map(|(latitude, longitude)| (longitude, latitude))
+            .collect();
+        dggs.cells_from_lonlats_bulk(&coordinates, resolution, use_parallel)
+            .map(|cells| cells.into_iter().map(|cell| cell.to_string()).collect())
+    })
+    .map_err(value_error)
+}
+
+fn use_parallel(requested: Option<bool>, count: usize, threshold: usize) -> bool {
+    parallelism_available() && requested.unwrap_or(count >= threshold)
+}
+
+fn checked_chunks(data: &[u8], width: usize, label: &str) -> PyResult<usize> {
+    if data.len() % width != 0 {
+        return Err(PyValueError::new_err(format!(
+            "{label} byte length must be divisible by {width}; got {}",
+            data.len()
+        )));
+    }
+    Ok(data.len() / width)
+}
+
+fn f64_at(chunk: &[u8], offset: usize) -> f64 {
+    f64::from_le_bytes(
+        chunk[offset..offset + 8]
+            .try_into()
+            .expect("the caller validated the chunk width"),
+    )
+}
+
+fn encode_cells(cells: &[CellId]) -> Vec<u8> {
+    let mut output = Vec::with_capacity(cells.len() * 8);
+    for cell in cells {
+        output.extend_from_slice(&cell.to_u64().to_le_bytes());
+    }
+    output
+}
+
+fn decode_cells(data: &[u8]) -> std::result::Result<Vec<CellId>, Error> {
+    data.chunks_exact(8)
+        .map(|chunk| {
+            CellId::from_u64(u64::from_le_bytes(
+                chunk.try_into().expect("chunks are exactly eight bytes"),
+            ))
         })
         .collect()
+}
+
+/// Rust buffer backend for NumPy latitude/longitude to integer-cell batches.
+#[pyfunction(name = "_latlngs_to_cells_buffer", signature = (data, resolution, parallel=None))]
+fn latlngs_to_cells_buffer(
+    py: Python<'_>,
+    data: Py<PyBytes>,
+    resolution: u8,
+    parallel: Option<bool>,
+) -> PyResult<Py<PyBytes>> {
+    let data = data.as_bytes(py);
+    let count = checked_chunks(data, 16, "coordinate")?;
+    let parallel = use_parallel(parallel, count, POINT_PARALLEL_THRESHOLD);
+    let output = py
+        .detach(|| {
+            let coordinates: Vec<_> = data
+                .chunks_exact(16)
+                .map(|chunk| (f64_at(chunk, 8), f64_at(chunk, 0)))
+                .collect();
+            RhealpixDggs::wgs84_003()
+                .cells_from_lonlats_bulk(&coordinates, resolution, parallel)
+                .map(|cells| encode_cells(&cells))
+        })
+        .map_err(value_error)?;
+    Ok(PyBytes::new(py, &output).unbind())
+}
+
+/// Rust buffer backend for integer-cell to latitude/longitude batches.
+#[pyfunction(name = "_cells_to_latlngs_buffer", signature = (data, parallel=None))]
+fn cells_to_latlngs_buffer(
+    py: Python<'_>,
+    data: Py<PyBytes>,
+    parallel: Option<bool>,
+) -> PyResult<Py<PyBytes>> {
+    let data = data.as_bytes(py);
+    let count = checked_chunks(data, 8, "cell")?;
+    let parallel = use_parallel(parallel, count, POINT_PARALLEL_THRESHOLD);
+    let output = py
+        .detach(|| {
+            let cells = decode_cells(data)?;
+            let points = RhealpixDggs::wgs84_003().lonlats_from_cells_bulk(&cells, parallel)?;
+            let mut output = Vec::with_capacity(points.len() * 16);
+            for (longitude, latitude) in points {
+                output.extend_from_slice(&latitude.to_le_bytes());
+                output.extend_from_slice(&longitude.to_le_bytes());
+            }
+            Ok::<_, Error>(output)
+        })
+        .map_err(value_error)?;
+    Ok(PyBytes::new(py, &output).unbind())
+}
+
+/// Rust buffer backend for integer-cell to fixed boundary batches.
+#[pyfunction(name = "_cells_to_boundaries_buffer", signature = (data, points_per_edge=2, interior=false, parallel=None))]
+fn cells_to_boundaries_buffer(
+    py: Python<'_>,
+    data: Py<PyBytes>,
+    points_per_edge: usize,
+    interior: bool,
+    parallel: Option<bool>,
+) -> PyResult<Py<PyBytes>> {
+    let data = data.as_bytes(py);
+    let count = checked_chunks(data, 8, "cell")?;
+    let parallel = use_parallel(parallel, count, BOUNDARY_PARALLEL_THRESHOLD);
+    let output = py
+        .detach(|| {
+            let cells = decode_cells(data)?;
+            let boundaries = RhealpixDggs::wgs84_003().boundaries_lonlat_bulk(
+                &cells,
+                points_per_edge,
+                interior,
+                parallel,
+            )?;
+            let point_count = points_per_edge
+                .checked_sub(1)
+                .and_then(|value| value.checked_mul(4))
+                .unwrap_or(0);
+            let mut output = Vec::with_capacity(boundaries.len() * point_count * 16);
+            for boundary in boundaries {
+                for (longitude, latitude) in boundary {
+                    output.extend_from_slice(&latitude.to_le_bytes());
+                    output.extend_from_slice(&longitude.to_le_bytes());
+                }
+            }
+            Ok::<_, Error>(output)
+        })
+        .map_err(value_error)?;
+    Ok(PyBytes::new(py, &output).unbind())
+}
+
+/// Rust buffer backend for ragged bounding-box coverage batches.
+#[pyfunction(name = "_bboxes_to_cells_buffer", signature = (data, resolution, parallel=None))]
+fn bboxes_to_cells_buffer(
+    py: Python<'_>,
+    data: Py<PyBytes>,
+    resolution: u8,
+    parallel: Option<bool>,
+) -> PyResult<(Py<PyBytes>, Py<PyBytes>)> {
+    let data = data.as_bytes(py);
+    let count = checked_chunks(data, 32, "bounding-box")?;
+    let parallel = use_parallel(parallel, count, REGION_PARALLEL_THRESHOLD);
+    let (cell_bytes, offset_bytes) = py
+        .detach(|| {
+            let bboxes: Vec<_> = data
+                .chunks_exact(32)
+                .map(|chunk| {
+                    (
+                        f64_at(chunk, 0),
+                        f64_at(chunk, 8),
+                        f64_at(chunk, 16),
+                        f64_at(chunk, 24),
+                    )
+                })
+                .collect();
+            let groups =
+                RhealpixDggs::wgs84_003().cells_from_bboxes_bulk(&bboxes, resolution, parallel)?;
+            let total: usize = groups.iter().map(Vec::len).sum();
+            let mut cell_bytes = Vec::with_capacity(total * 8);
+            let mut offset_bytes = Vec::with_capacity((groups.len() + 1) * 8);
+            let mut offset = 0_u64;
+            offset_bytes.extend_from_slice(&offset.to_le_bytes());
+            for cells in groups {
+                cell_bytes.extend_from_slice(&encode_cells(&cells));
+                let cell_count =
+                    u64::try_from(cells.len()).map_err(|_| Error::ExpansionTooLarge(u64::MAX))?;
+                offset = offset
+                    .checked_add(cell_count)
+                    .ok_or(Error::ExpansionTooLarge(u64::MAX))?;
+                offset_bytes.extend_from_slice(&offset.to_le_bytes());
+            }
+            Ok::<_, Error>((cell_bytes, offset_bytes))
+        })
+        .map_err(value_error)?;
+    Ok((
+        PyBytes::new(py, &cell_bytes).unbind(),
+        PyBytes::new(py, &offset_bytes).unbind(),
+    ))
 }
 
 /// Return a cell nucleus as `(latitude, longitude)` degrees.
@@ -208,6 +393,107 @@ fn configured_dggs(north_square: u8, south_square: u8) -> RhealpixDggs {
     RhealpixDggs::new(Ellipsoid::wgs84(), north_square, south_square)
 }
 
+fn region_hint(region: &str) -> PyResult<Option<Region>> {
+    match region {
+        "none" => Ok(None),
+        "north_polar" => Ok(Some(Region::NorthPolar)),
+        "equatorial" => Ok(Some(Region::Equatorial)),
+        "south_polar" => Ok(Some(Region::SouthPolar)),
+        _ => Err(PyValueError::new_err(
+            "region must be 'none', 'north_polar', 'equatorial', or 'south_polar'",
+        )),
+    }
+}
+
+/// Compatibility-facade HEALPix and rHEALPix projection.
+#[pyfunction(name = "_project", signature = (point, projection="rhealpix", inverse=false, region="none", north_square=0, south_square=0))]
+fn compat_project(
+    point: (f64, f64),
+    projection: &str,
+    inverse: bool,
+    region: &str,
+    north_square: u8,
+    south_square: u8,
+) -> PyResult<(f64, f64)> {
+    let dggs = configured_dggs(north_square, south_square);
+    let result = match (projection, inverse) {
+        ("rhealpix", false) => dggs.project_lonlat(point.0, point.1),
+        ("rhealpix", true) => match region_hint(region)? {
+            None => dggs.unproject_lonlat(point.0, point.1),
+            Some(region) => dggs.unproject_lonlat_in_region(point.0, point.1, region),
+        },
+        ("healpix", false) => dggs.project_healpix_lonlat(point.0, point.1),
+        ("healpix", true) => dggs.unproject_healpix_lonlat(point.0, point.1),
+        _ => {
+            return Err(PyValueError::new_err(
+                "projection must be 'healpix' or 'rhealpix'",
+            ));
+        }
+    };
+    result.map_err(value_error)
+}
+
+/// Compatibility-facade HEALPix triangle rearrangement.
+#[pyfunction(name = "_combine_triangles", signature = (point, inverse=false, region="none", north_square=0, south_square=0))]
+fn compat_combine_triangles(
+    point: (f64, f64),
+    inverse: bool,
+    region: &str,
+    north_square: u8,
+    south_square: u8,
+) -> PyResult<(f64, f64)> {
+    configured_dggs(north_square, south_square)
+        .combine_triangles(point.0, point.1, inverse, region_hint(region)?)
+        .map_err(value_error)
+}
+
+/// Compatibility-facade HEALPix triangle classifier.
+#[pyfunction(name = "_triangle", signature = (point, inverse=true, north_square=0, south_square=0))]
+fn compat_triangle(
+    point: (f64, f64),
+    inverse: bool,
+    north_square: u8,
+    south_square: u8,
+) -> PyResult<(Option<u8>, &'static str)> {
+    configured_dggs(north_square, south_square)
+        .triangle(point.0, point.1, inverse)
+        .map(|(number, region)| (number, region.as_str()))
+        .map_err(value_error)
+}
+
+/// Compatibility-facade ellipsoidal Cartesian coordinates.
+#[pyfunction(name = "_xyz", signature = (point, lonlat=false, north_square=0, south_square=0))]
+fn compat_xyz(
+    point: (f64, f64),
+    lonlat: bool,
+    north_square: u8,
+    south_square: u8,
+) -> PyResult<(f64, f64, f64)> {
+    let dggs = configured_dggs(north_square, south_square);
+    if lonlat {
+        dggs.xyz_lonlat(point.0, point.1).map_err(value_error)
+    } else {
+        dggs.xyz_projected(point.0, point.1).map_err(value_error)
+    }
+}
+
+/// Compatibility-facade folded cube coordinates.
+#[pyfunction(name = "_xyz_cube", signature = (point, lonlat=false, north_square=0, south_square=0))]
+fn compat_xyz_cube(
+    point: (f64, f64),
+    lonlat: bool,
+    north_square: u8,
+    south_square: u8,
+) -> PyResult<(f64, f64, f64)> {
+    let dggs = configured_dggs(north_square, south_square);
+    if lonlat {
+        dggs.xyz_cube_lonlat(point.0, point.1).map_err(value_error)
+    } else {
+        dggs.xyz_cube_projected(point.0, point.1)
+            .map_err(value_error)
+    }
+}
+
 fn configured_neighbors(
     dggs: &RhealpixDggs,
     cell: &CellId,
@@ -363,6 +649,31 @@ fn compat_cell_vertices(
         dggs.cell_vertices_lonlat(&cell, trim_dart)
             .map_err(value_error)
     }
+}
+
+/// Compatibility-facade upper-left or geographic northwest vertex.
+#[pyfunction(name = "_cell_vertex", signature = (cell, vertex="upper_left", plane=true, north_square=0, south_square=0))]
+fn compat_cell_vertex(
+    cell: &str,
+    vertex: &str,
+    plane: bool,
+    north_square: u8,
+    south_square: u8,
+) -> PyResult<(f64, f64)> {
+    let cell = parse_cell(cell)?;
+    let dggs = configured_dggs(north_square, south_square);
+    let point = match (vertex, plane) {
+        ("upper_left", true) => dggs.cell_upper_left_projected(&cell),
+        ("upper_left", false) => dggs.cell_upper_left_lonlat(&cell),
+        ("northwest", true) => dggs.cell_northwest_vertex_projected(&cell),
+        ("northwest", false) => dggs.cell_northwest_vertex_lonlat(&cell),
+        _ => {
+            return Err(PyValueError::new_err(
+                "vertex must be 'upper_left' or 'northwest'",
+            ));
+        }
+    };
+    point.map_err(value_error)
 }
 
 /// Compatibility-facade boundary with upstream coordinate ordering.
@@ -615,6 +926,10 @@ fn uncompact_cells(cells: Vec<String>, resolution: u8) -> PyResult<Vec<String>> 
 fn _rhealpixdggs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(latlng_to_cell, module)?)?;
     module.add_function(wrap_pyfunction!(latlngs_to_cells, module)?)?;
+    module.add_function(wrap_pyfunction!(latlngs_to_cells_buffer, module)?)?;
+    module.add_function(wrap_pyfunction!(cells_to_latlngs_buffer, module)?)?;
+    module.add_function(wrap_pyfunction!(cells_to_boundaries_buffer, module)?)?;
+    module.add_function(wrap_pyfunction!(bboxes_to_cells_buffer, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_latlng, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_centroid, module)?)?;
     module.add_function(wrap_pyfunction!(bbox_to_cells, module)?)?;
@@ -643,17 +958,27 @@ fn _rhealpixdggs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(compact_cells, module)?)?;
     module.add_function(wrap_pyfunction!(uncompact_cells, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_from_point, module)?)?;
+    module.add_function(wrap_pyfunction!(compat_project, module)?)?;
+    module.add_function(wrap_pyfunction!(compat_combine_triangles, module)?)?;
+    module.add_function(wrap_pyfunction!(compat_triangle, module)?)?;
+    module.add_function(wrap_pyfunction!(compat_xyz, module)?)?;
+    module.add_function(wrap_pyfunction!(compat_xyz_cube, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_nucleus, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_centroid, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cells_from_region, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cells_from_line, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_vertices, module)?)?;
+    module.add_function(wrap_pyfunction!(compat_cell_vertex, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_boundary, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_neighbor, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_neighbors, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_metric, module)?)?;
     module.add_function(wrap_pyfunction!(compat_compare_cells, module)?)?;
     module.add("MAX_RESOLUTION", MAX_RESOLUTION)?;
+    module.add("POINT_PARALLEL_THRESHOLD", POINT_PARALLEL_THRESHOLD)?;
+    module.add("BOUNDARY_PARALLEL_THRESHOLD", BOUNDARY_PARALLEL_THRESHOLD)?;
+    module.add("REGION_PARALLEL_THRESHOLD", REGION_PARALLEL_THRESHOLD)?;
+    module.add("PARALLELISM_AVAILABLE", parallelism_available())?;
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

@@ -3,7 +3,7 @@
 The sequence is deliberately Python-first while keeping the core reusable by
 other languages.
 
-## M0 — Rust core and Python package (current)
+## M0 — Rust core and Python package
 
 - [x] Cargo workspace with a dependency-free core crate
 - [x] PyO3/maturin Python package
@@ -25,20 +25,29 @@ other languages.
 - [x] Cell ordering, predecessor/successor, and level/post-order indices
 - [x] Region, line, and polygon coverage without geometry types in core
 - [x] Initial Python `RHEALPixDGGS` and `Cell` compatibility facade
-- [ ] Complete facade parity for ordering, traversal, and geometry methods
+- [x] Complete deterministic facade parity for ordering, traversal, and geometry methods
 
-Exit criterion: documented supported calls match upstream IDs and numerical
-outputs within an agreed error budget over random, boundary, antimeridian, and
-polar fixtures.
+Exit criterion met: documented supported calls match upstream IDs and
+numerical outputs within explicit error budgets over generated point,
+boundary, antimeridian, polar, traversal, coverage, and facade fixtures. See
+[`docs/UPSTREAM_COMPATIBILITY.md`](docs/UPSTREAM_COMPATIBILITY.md).
 
-## M2 — Performance API
+## M2 — Performance API (in progress)
 
-- [ ] Criterion baseline against released `rhealpixdggs-py`
-- [ ] NumPy array input/output without per-point Python calls
-- [ ] Release the Python GIL around bulk operations
-- [ ] Optional Rayon parallelism above a measured crossover size
-- [ ] Batch cell-to-boundary and region-cover operations
-- [ ] Benchmark memory, latency, and throughput on Linux, Windows, and macOS
+- [x] Criterion core baseline and reproducible comparison with released `rhealpixdggs-py` 0.6.0
+- [x] NumPy array input/output without per-point Python calls
+- [x] Release the Python GIL around bulk operations
+- [x] Optional Rayon parallelism above measured operation-specific crossover sizes
+- [x] Batch cell-to-boundary and region-cover operations
+- [ ] Benchmark memory, latency, and throughput on all target operating systems
+  - [x] Linux x86_64
+  - [ ] Windows x86_64
+  - [ ] macOS arm64
+
+The cross-platform benchmark workflow and JSON-emitting Python harness are in
+place. The remaining M2 work is to run the workflow on GitHub-hosted Windows
+and macOS hardware and publish those artifacts; local Linux measurements are
+documented in [`BENCHMARKS.md`](BENCHMARKS.md).
 
 Performance claims will be published only with reproducible fixtures and both
 single-point and bulk measurements.

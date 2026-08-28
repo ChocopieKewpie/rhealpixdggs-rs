@@ -15,8 +15,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 pyo3 = "0.29.2"
-rhealpixdggs = { path = "../../crates/rhealpixdggs" }
+rhealpixdggs = { path = "../../crates/rhealpixdggs", features = ["parallel"] }
 
 [lints]
 workspace = true
-

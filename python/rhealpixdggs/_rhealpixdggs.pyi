@@ -57,6 +57,39 @@ def _cell_from_point(
     north_square: int = 0,
     south_square: int = 0,
 ) -> str | None: ...
+def _project(
+    point: tuple[float, float],
+    projection: str = "rhealpix",
+    inverse: bool = False,
+    region: str = "none",
+    north_square: int = 0,
+    south_square: int = 0,
+) -> tuple[float, float]: ...
+def _combine_triangles(
+    point: tuple[float, float],
+    inverse: bool = False,
+    region: str = "none",
+    north_square: int = 0,
+    south_square: int = 0,
+) -> tuple[float, float]: ...
+def _triangle(
+    point: tuple[float, float],
+    inverse: bool = True,
+    north_square: int = 0,
+    south_square: int = 0,
+) -> tuple[int | None, str]: ...
+def _xyz(
+    point: tuple[float, float],
+    lonlat: bool = False,
+    north_square: int = 0,
+    south_square: int = 0,
+) -> tuple[float, float, float]: ...
+def _xyz_cube(
+    point: tuple[float, float],
+    lonlat: bool = False,
+    north_square: int = 0,
+    south_square: int = 0,
+) -> tuple[float, float, float]: ...
 def _cell_nucleus(
     cell: str,
     plane: bool = True,
@@ -92,6 +125,13 @@ def _cell_vertices(
     north_square: int = 0,
     south_square: int = 0,
 ) -> list[tuple[float, float]]: ...
+def _cell_vertex(
+    cell: str,
+    vertex: str = "upper_left",
+    plane: bool = True,
+    north_square: int = 0,
+    south_square: int = 0,
+) -> tuple[float, float]: ...
 def _cell_boundary(
     cell: str,
     n: int = 2,

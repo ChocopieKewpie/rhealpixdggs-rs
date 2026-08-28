@@ -78,3 +78,74 @@ The upstream optional dependency imports were replaced with inert stubs during
 this isolated comparison; imports and object construction occurred outside the
 timed loop, and the measured `cell_from_point` path still used upstream's own
 Python rHEALPix projection and cell-selection code.
+
+## M2 bulk baseline
+
+Measured on 2026-08-28 in the same Linux x86_64 environment, now with 9 logical
+CPUs available, CPython 3.12.13, NumPy 2.5.2, and a release build. Values below
+are medians of five warmed Python samples. The upstream rows execute the
+equivalent 0.6.0 scalar operation once per point because that release has no
+array API. The NumPy rows include normalization, one contiguous input-buffer
+copy, Rust computation, and creation of a read-only zero-copy output view.
+
+| Batch | Implementation/mode | Median latency | Throughput | Traced peak memory |
+|---:|---|---:|---:|---:|
+| 256 | Rust NumPy automatic | 51.3 µs | 4.99 M points/s | 6.2 KiB |
+| 256 | Upstream Python loop | 5.16 ms | 49.6 k points/s | 16.2 KiB |
+| 4,096 | Rust NumPy automatic | 1.21 ms | 3.37 M points/s | 96.1 KiB |
+| 4,096 | Upstream Python loop | 93.3 ms | 43.9 k points/s | 237.6 KiB |
+| 65,536 | Rust NumPy automatic | 6.50 ms | 10.1 M points/s | 1.50 MiB |
+| 65,536 | Upstream Python loop | 1.384 s | 47.4 k points/s | 3.73 MiB |
+
+At 65,536 points the complete NumPy call was about **213× faster** and its
+traced peak was about **2.5× smaller** than the upstream string-producing loop.
+The fixed result payload itself is 8 bytes per cell ID; the input payload is 16
+bytes per latitude/longitude pair. Results use the stable integer encoding and
+can be converted to strings only where a text boundary requires it.
+
+A 4,096-cell geographic boundary batch with four points per edge (12 points
+per cell) took a 2.03 ms median, or about 2.02 million cells / 24.3 million
+boundary points per second. Its output payload was 768 KiB and traced peak was
+800 KiB.
+
+### Parallel crossover
+
+Criterion used one-second warm-up, three-second measurement, and 20 samples.
+Medians shown are sequential versus forced Rayon execution:
+
+| Operation | Batch | Sequential | Rayon | Selected automatic threshold |
+|---|---:|---:|---:|---:|
+| Longitude/latitude → cell | 256 | 43.3 µs | 183.0 µs | 4,096 |
+| Longitude/latitude → cell | 4,096 | 982.1 µs | 557.3 µs | 4,096 |
+| Cell → nucleus | 256 | 30.5 µs | 177.9 µs | 4,096 |
+| Cell → nucleus | 4,096 | 522.3 µs | 374.3 µs | 4,096 |
+| 12-point boundary | 64 | 103.6 µs | 127.3 µs | 512 |
+| 12-point boundary | 512 | 669.8 µs | 341.3 µs | 512 |
+| Small region cover | 64 | 122.0 µs | 143.7 µs | 256 |
+| Small region cover | 256 | 321.2 µs | 228.9 µs | 256 |
+
+Parallel measurements are noisier on shared CI/container hardware, especially
+when callers force Rayon below the crossover. Automatic mode uses the table's
+conservative thresholds. Explicit `parallel=True` and `parallel=False` remain
+available for workload-specific tuning.
+
+Reproduce the core measurements with:
+
+```bash
+cargo bench -p rhealpixdggs --features parallel --bench bulk
+```
+
+Reproduce the Python and upstream comparison from an unpacked 0.6.0 source
+tree with:
+
+```bash
+python tools/benchmark_m2.py \
+  --mode all \
+  --upstream-root ../upstream-src
+```
+
+The benchmark emits versioned JSON to standard output, including OS, Python,
+CPU-count, latency ranges, throughput, traced peak memory, and active threshold.
+The manual `M2 Benchmarks` GitHub Actions workflow runs the current
+implementation on Linux, Windows, and macOS and retains both Python JSON and
+Criterion output as build artifacts.

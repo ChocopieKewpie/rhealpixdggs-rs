@@ -48,6 +48,165 @@ impl RhealpixDggs {
         self.south_square
     }
 
+    /// Project longitude/latitude degrees to rHEALPix metres.
+    pub fn project_lonlat(&self, longitude: f64, latitude: f64) -> Result<(f64, f64)> {
+        projection::forward(
+            self.ellipsoid,
+            longitude,
+            latitude,
+            self.north_square,
+            self.south_square,
+        )
+    }
+
+    /// Invert rHEALPix metres to longitude/latitude degrees.
+    pub fn unproject_lonlat(&self, x: f64, y: f64) -> Result<(f64, f64)> {
+        projection::inverse(self.ellipsoid, x, y, self.north_square, self.south_square)
+    }
+
+    /// Invert rHEALPix metres with an explicit geographic region hint.
+    pub fn unproject_lonlat_in_region(&self, x: f64, y: f64, region: Region) -> Result<(f64, f64)> {
+        projection::inverse_in_region(
+            self.ellipsoid,
+            x,
+            y,
+            self.north_square,
+            self.south_square,
+            projection_region(region),
+        )
+    }
+
+    /// Project longitude/latitude degrees to HEALPix metres.
+    pub fn project_healpix_lonlat(&self, longitude: f64, latitude: f64) -> Result<(f64, f64)> {
+        projection::healpix_forward(self.ellipsoid, longitude, latitude)
+    }
+
+    /// Invert HEALPix metres to longitude/latitude degrees.
+    pub fn unproject_healpix_lonlat(&self, x: f64, y: f64) -> Result<(f64, f64)> {
+        projection::healpix_inverse(self.ellipsoid, x, y)
+    }
+
+    /// Transform between HEALPix and rHEALPix projected metres.
+    pub fn combine_triangles(
+        &self,
+        x: f64,
+        y: f64,
+        inverse: bool,
+        region: Option<Region>,
+    ) -> Result<(f64, f64)> {
+        if !x.is_finite() || !y.is_finite() {
+            return Err(Error::InvalidCoordinate(
+                "projected coordinates must be finite".to_owned(),
+            ));
+        }
+        let radius = self.ellipsoid.authalic_radius();
+        let transformed = projection::combine_triangles(
+            x / radius,
+            y / radius,
+            self.north_square,
+            self.south_square,
+            inverse,
+            region.map(projection_region),
+        );
+        Ok((transformed.0 * radius, transformed.1 * radius))
+    }
+
+    /// Identify the HEALPix triangle and geographic region of projected metres.
+    pub fn triangle(&self, x: f64, y: f64, inverse: bool) -> Result<(Option<u8>, Region)> {
+        if !x.is_finite() || !y.is_finite() {
+            return Err(Error::InvalidCoordinate(
+                "projected coordinates must be finite".to_owned(),
+            ));
+        }
+        let radius = self.ellipsoid.authalic_radius();
+        let (number, region) = projection::triangle_number(
+            x / radius,
+            y / radius,
+            self.north_square,
+            self.south_square,
+            inverse,
+        );
+        let region = cell_region(region);
+        Ok((
+            (region != Region::Equatorial).then_some(number as u8),
+            region,
+        ))
+    }
+
+    /// Return geocentric Cartesian coordinates for longitude/latitude degrees.
+    pub fn xyz_lonlat(&self, longitude: f64, latitude: f64) -> Result<(f64, f64, f64)> {
+        self.project_lonlat(longitude, latitude)?;
+        let longitude = longitude.to_radians();
+        let latitude = latitude.to_radians();
+        let eccentricity = self.ellipsoid.eccentricity();
+        let normal = self.ellipsoid.semi_major_axis()
+            / (1.0 - eccentricity.powi(2) * latitude.sin().powi(2)).sqrt();
+        Ok((
+            normal * longitude.cos() * latitude.cos(),
+            normal * longitude.sin() * latitude.cos(),
+            normal * (1.0 - eccentricity.powi(2)) * latitude.sin(),
+        ))
+    }
+
+    /// Return geocentric Cartesian coordinates for an rHEALPix projected point.
+    pub fn xyz_projected(&self, x: f64, y: f64) -> Result<(f64, f64, f64)> {
+        let (longitude, latitude) = self.unproject_lonlat(x, y)?;
+        self.xyz_lonlat(longitude, latitude)
+    }
+
+    /// Fold an rHEALPix projected point onto a cube centred at the origin.
+    pub fn xyz_cube_projected(&self, x: f64, y: f64) -> Result<(f64, f64, f64)> {
+        if !x.is_finite() || !y.is_finite() {
+            return Err(Error::InvalidCoordinate(
+                "projected coordinates must be finite".to_owned(),
+            ));
+        }
+        let width = self.cell_width(0)?;
+        let mut x = x + 2.0 * width;
+        let y = y + width / 2.0;
+        let point = if y < 0.0 {
+            x -= f64::from(self.south_square) * width;
+            match self.south_square {
+                0 => (x, 0.0, y),
+                1 => (y + width, 0.0, -x),
+                2 => (width - x, 0.0, -y - width),
+                3 => (-y, 0.0, x - width),
+                _ => unreachable!(),
+            }
+        } else if y > width {
+            x -= f64::from(self.north_square) * width;
+            match self.north_square {
+                0 => (x, width, -y + width),
+                1 => (-y + 2.0 * width, width, -x),
+                2 => (-x + width, width, y - 2.0 * width),
+                3 => (y - width, width, x - width),
+                _ => unreachable!(),
+            }
+        } else if x < width {
+            (x, y, 0.0)
+        } else if x < 2.0 * width {
+            x -= width;
+            (width, y, -x)
+        } else if x < 3.0 * width {
+            x -= 2.0 * width;
+            (width - x, y, -width)
+        } else {
+            x -= 3.0 * width;
+            (0.0, y, x - width)
+        };
+        Ok((
+            point.0 - width / 2.0,
+            point.1 - width / 2.0,
+            point.2 + width / 2.0,
+        ))
+    }
+
+    /// Project longitude/latitude degrees and fold the result onto a cube.
+    pub fn xyz_cube_lonlat(&self, longitude: f64, latitude: f64) -> Result<(f64, f64, f64)> {
+        let (x, y) = self.project_lonlat(longitude, latitude)?;
+        self.xyz_cube_projected(x, y)
+    }
+
     /// Convert longitude/latitude degrees to a cell identifier.
     pub fn cell_from_lonlat(
         &self,
@@ -56,13 +215,7 @@ impl RhealpixDggs {
         resolution: u8,
     ) -> Result<CellId> {
         validate_resolution(resolution)?;
-        let (x, y) = projection::forward(
-            self.ellipsoid,
-            longitude,
-            latitude,
-            self.north_square,
-            self.south_square,
-        )?;
+        let (x, y) = self.project_lonlat(longitude, latitude)?;
         self.cell_from_projected(x, y, resolution)
     }
 
@@ -157,6 +310,29 @@ impl RhealpixDggs {
             (upper_left.0 + width, upper_left.1 - width),
             (upper_left.0, upper_left.1 - width),
         ])
+    }
+
+    /// Return the planar upper-left vertex used by the hierarchical square.
+    pub fn cell_upper_left_projected(&self, cell: &CellId) -> Result<(f64, f64)> {
+        self.cell_upper_left(cell)
+    }
+
+    /// Return the ellipsoidal projection of the planar upper-left vertex.
+    pub fn cell_upper_left_lonlat(&self, cell: &CellId) -> Result<(f64, f64)> {
+        let point = self.cell_upper_left(cell)?;
+        self.unproject_lonlat_in_region(point.0, point.1, cell.region())
+    }
+
+    /// Return the projected location of the ellipsoidal northwest vertex.
+    pub fn cell_northwest_vertex_projected(&self, cell: &CellId) -> Result<(f64, f64)> {
+        let vertices = self.cell_vertices_projected(cell)?;
+        Ok(vertices[self.northwest_vertex_index(cell, &vertices)?])
+    }
+
+    /// Return the ellipsoidal northwest vertex.
+    pub fn cell_northwest_vertex_lonlat(&self, cell: &CellId) -> Result<(f64, f64)> {
+        let point = self.cell_northwest_vertex_projected(cell)?;
+        self.unproject_lonlat_in_region(point.0, point.1, cell.region())
     }
 
     /// Return inverse-projected boundary points as longitude/latitude.
@@ -586,6 +762,14 @@ const fn projection_region(region: Region) -> projection::Region {
     }
 }
 
+const fn cell_region(region: projection::Region) -> Region {
+    match region {
+        projection::Region::NorthPolar => Region::NorthPolar,
+        projection::Region::Equatorial => Region::Equatorial,
+        projection::Region::SouthPolar => Region::SouthPolar,
+    }
+}
+
 const fn digit_on_border(digit: u8, direction: Direction) -> bool {
     match direction {
         Direction::Left => digit % 3 == 0,
@@ -620,7 +804,7 @@ fn stable_grid_index(fraction: f64, scale: u64) -> u64 {
     (stable.floor() as u64).min(scale - 1)
 }
 
-fn boundary_point_count(points_per_edge: usize) -> Result<usize> {
+pub(crate) fn boundary_point_count(points_per_edge: usize) -> Result<usize> {
     if points_per_edge < 2 {
         return Err(Error::InvalidBoundaryPointCount(points_per_edge));
     }

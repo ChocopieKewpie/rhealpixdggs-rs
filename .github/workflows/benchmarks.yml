@@ -1,0 +1,37 @@
+name: M2 Benchmarks
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: develop
+          args: --release
+      - name: Python latency, throughput, and memory
+        shell: bash
+        run: python tools/benchmark_m2.py --mode current > m2-python.json
+      - name: Criterion bulk crossover
+        shell: bash
+        run: cargo bench -p rhealpixdggs --features parallel --bench bulk -- --noplot | tee m2-criterion.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: m2-benchmarks-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            m2-python.json
+            m2-criterion.txt

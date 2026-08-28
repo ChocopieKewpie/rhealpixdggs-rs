@@ -328,6 +328,14 @@ impl CellId {
         }
     }
 
+    /// Return the row and column digit sequences for this hierarchical cell.
+    pub fn row_column_digits(&self) -> (Vec<u8>, Vec<u8>) {
+        (
+            self.digits.iter().map(|digit| digit / 3).collect(),
+            self.digits.iter().map(|digit| digit % 3).collect(),
+        )
+    }
+
     /// Return this cell's direct parent, or `None` for a resolution-zero cell.
     pub fn parent(&self) -> Option<Self> {
         let mut digits = self.digits.clone();
@@ -376,6 +384,11 @@ impl CellId {
     /// Return whether `self` contains `other`, including equality.
     pub fn contains(&self, other: &Self) -> bool {
         self.face == other.face && other.digits.starts_with(&self.digits)
+    }
+
+    /// Return whether either cell contains the other.
+    pub fn overlaps(&self, other: &Self) -> bool {
+        self.contains(other) || other.contains(self)
     }
 
     /// Return the number of descendants at `resolution`.
@@ -855,9 +868,16 @@ mod tests {
         let parent: CellId = "Q38".parse().unwrap();
         let child: CellId = "Q381".parse().unwrap();
         assert!(parent.contains(&child));
+        assert!(parent.overlaps(&child));
+        assert!(child.overlaps(&parent));
+        assert!(!child.overlaps(&"Q37".parse().unwrap()));
         assert_eq!(child.parent().unwrap(), parent);
         assert_eq!(child.parent_at(0).unwrap().to_string(), "Q");
         assert_eq!(parent.children().unwrap().len(), 9);
+        assert_eq!(
+            "N73".parse::<CellId>().unwrap().row_column_digits(),
+            (vec![2, 1], vec![1, 0])
+        );
     }
 
     #[test]

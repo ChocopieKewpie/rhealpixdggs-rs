@@ -20,6 +20,12 @@ Python suite consume it. Polygon cases reproduce upstream's strict ellipsoidal-
 centroid selection; antimeridian and polar-cap corrections are tested
 separately because upstream documents those line cases as unsupported.
 
+`facade-v1.json` closes the deterministic M1 object-facade contract with 63
+projection, triangle, Cartesian, region-parent, latitude traversal,
+meridian/parallel, interval, identifier, cell predicate, and geometry cases.
+It covers the canonical layout plus a custom north/south polar-square layout,
+and is consumed by both the Rust and Python suites.
+
 Geometry cases include nuclei, vertices, trimmed darts, ordinary and inset
 boundaries, and planar/geographic neighbours. The source methods are the same
 ones exercised by the upstream doctests; their names are recorded in the
@@ -50,6 +56,8 @@ python tools/generate_upstream_corpus.py \
   --upstream-root ../upstream-src \
   --minimal-dependency-stubs
 python tools/generate_upstream_coverage_corpus.py \
+  --upstream-root ../upstream-src
+python tools/generate_upstream_facade_corpus.py \
   --upstream-root ../upstream-src
 ```
 
