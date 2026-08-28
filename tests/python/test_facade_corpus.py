@@ -33,7 +33,7 @@ def _assert_points(
     geographic: bool = False,
 ) -> None:
     assert len(actual) == len(expected)
-    for actual_point, expected_point in zip(actual, expected, strict=True):
+    for actual_point, expected_point in zip(actual, expected):
         _assert_point(
             actual_point,
             expected_point,
@@ -219,14 +219,17 @@ def test_versioned_facade_corpus() -> None:
             geographic=True,
         )
         actual_ranges = cell.xy_range()
+        assert len(actual_ranges) == len(case["xy_range"])
         for actual_range, expected_range in zip(
-            actual_ranges, case["xy_range"], strict=True
+            actual_ranges, case["xy_range"]
         ):
             assert actual_range == pytest.approx(
                 expected_range, abs=projected_tolerance
             )
+        interior = cell.interior(n=3)
+        assert len(interior) == len(case["interior_projected_n3"])
         for actual_row, expected_row in zip(
-            cell.interior(n=3), case["interior_projected_n3"], strict=True
+            interior, case["interior_projected_n3"]
         ):
             _assert_points(actual_row, expected_row, projected_tolerance)
         _assert_points(
