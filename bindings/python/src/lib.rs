@@ -1,14 +1,12 @@
 //! PyO3 bindings for the dependency-free `rhealpixdggs` core.
 
-use std::cmp::Ordering;
-use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use rhealpixdggs::{
-    CellId, Direction, Ellipsoid, EllipsoidalDirection, Error, MAX_RESOLUTION, RhealpixDggs,
-    compact_cells as compact_core, uncompact_cells as uncompact_core,
+    CellId, Error, MAX_RESOLUTION, RhealpixDggs, compact_cells as compact_core,
+    uncompact_cells as uncompact_core,
 };
 
 fn value_error(error: Error) -> PyErr {
@@ -52,93 +50,12 @@ fn cell_to_latlng(cell: &str) -> PyResult<(f64, f64)> {
         .map_err(value_error)
 }
 
-/// Return an ellipsoidal cell centroid as `(latitude, longitude)` degrees.
+/// Return four boundary points as `(latitude, longitude)` degrees.
 #[pyfunction]
-fn cell_to_centroid(cell: &str) -> PyResult<(f64, f64)> {
+fn cell_to_boundary(cell: &str) -> PyResult<Vec<(f64, f64)>> {
     let cell = parse_cell(cell)?;
     RhealpixDggs::wgs84_003()
-        .cell_centroid_lonlat(&cell)
-        .map(|(longitude, latitude)| (latitude, longitude))
-        .map_err(value_error)
-}
-
-/// Return cells covering a latitude/longitude bounding box.
-///
-/// Antimeridian-crossing boxes use `west > east` and are split automatically.
-#[pyfunction]
-fn bbox_to_cells(
-    north: f64,
-    south: f64,
-    east: f64,
-    west: f64,
-    resolution: u8,
-) -> PyResult<Vec<String>> {
-    let dggs = RhealpixDggs::wgs84_003();
-    let intervals = if west <= east {
-        vec![(west, east)]
-    } else {
-        vec![(west, 180.0), (-180.0, east)]
-    };
-    let mut cells = std::collections::BTreeSet::new();
-    for (interval_west, interval_east) in intervals {
-        for cell in dggs
-            .cells_from_region_lonlat(resolution, (interval_west, north), (interval_east, south))
-            .map_err(value_error)?
-            .into_iter()
-            .flatten()
-        {
-            cells.insert(cell);
-        }
-    }
-    Ok(cells.into_iter().map(|cell| cell.to_string()).collect())
-}
-
-/// Return cells touched by a latitude/longitude polyline in path order.
-#[pyfunction]
-fn line_to_cells(coordinates: Vec<(f64, f64)>, resolution: u8) -> PyResult<Vec<String>> {
-    let coordinates: Vec<_> = coordinates
-        .into_iter()
-        .map(|(latitude, longitude)| (longitude, latitude))
-        .collect();
-    RhealpixDggs::wgs84_003()
-        .cells_from_polyline_lonlat(resolution, &coordinates)
-        .map(|cells| cells.into_iter().map(|cell| cell.to_string()).collect())
-        .map_err(value_error)
-}
-
-/// Fill a latitude/longitude polygon using cell-centroid containment.
-#[pyfunction(signature = (exterior, resolution, holes=None, compact=false))]
-fn polygon_to_cells(
-    exterior: Vec<(f64, f64)>,
-    resolution: u8,
-    holes: Option<Vec<Vec<(f64, f64)>>>,
-    compact: bool,
-) -> PyResult<Vec<String>> {
-    let exterior: Vec<_> = exterior
-        .into_iter()
-        .map(|(latitude, longitude)| (longitude, latitude))
-        .collect();
-    let holes: Vec<Vec<_>> = holes
-        .unwrap_or_default()
-        .into_iter()
-        .map(|ring| {
-            ring.into_iter()
-                .map(|(latitude, longitude)| (longitude, latitude))
-                .collect()
-        })
-        .collect();
-    RhealpixDggs::wgs84_003()
-        .cells_from_polygon_lonlat(resolution, &exterior, &holes, compact)
-        .map(|cells| cells.into_iter().map(|cell| cell.to_string()).collect())
-        .map_err(value_error)
-}
-
-/// Return boundary points as `(latitude, longitude)` degrees.
-#[pyfunction(signature = (cell, trim_dart=false))]
-fn cell_to_boundary(cell: &str, trim_dart: bool) -> PyResult<Vec<(f64, f64)>> {
-    let cell = parse_cell(cell)?;
-    RhealpixDggs::wgs84_003()
-        .cell_vertices_lonlat(&cell, trim_dart)
+        .cell_vertices_lonlat(&cell)
         .map(|points| {
             points
                 .into_iter()
@@ -146,309 +63,6 @@ fn cell_to_boundary(cell: &str, trim_dart: bool) -> PyResult<Vec<(f64, f64)>> {
                 .collect()
         })
         .map_err(value_error)
-}
-
-/// Return exactly `4 * points_per_edge - 4` boundary points as
-/// `(latitude, longitude)` degrees.
-#[pyfunction(signature = (cell, points_per_edge=2, interior=false))]
-fn cell_to_boundary_densified(
-    cell: &str,
-    points_per_edge: usize,
-    interior: bool,
-) -> PyResult<Vec<(f64, f64)>> {
-    let cell = parse_cell(cell)?;
-    RhealpixDggs::wgs84_003()
-        .cell_boundary_lonlat(&cell, points_per_edge, interior)
-        .map(|points| {
-            points
-                .into_iter()
-                .map(|(longitude, latitude)| (latitude, longitude))
-                .collect()
-        })
-        .map_err(value_error)
-}
-
-/// Return the upstream geographic region name for a cell.
-#[pyfunction]
-fn get_cell_region(cell: &str) -> PyResult<&'static str> {
-    Ok(parse_cell(cell)?.region().as_str())
-}
-
-/// Return the upstream ellipsoidal shape name for a cell.
-#[pyfunction]
-fn get_cell_shape(cell: &str) -> PyResult<&'static str> {
-    Ok(parse_cell(cell)?.shape().as_str())
-}
-
-/// Return one WGS84_003 planar or ellipsoidal edge neighbour.
-#[pyfunction(signature = (cell, direction, plane=true))]
-fn cell_to_neighbor(cell: &str, direction: &str, plane: bool) -> PyResult<Option<String>> {
-    let cell = parse_cell(cell)?;
-    let dggs = RhealpixDggs::wgs84_003();
-    if plane {
-        let direction = Direction::from_str(direction).map_err(value_error)?;
-        Ok(Some(dggs.planar_neighbor(&cell, direction).to_string()))
-    } else {
-        let direction = EllipsoidalDirection::from_str(direction).map_err(value_error)?;
-        dggs.ellipsoidal_neighbor(&cell, direction)
-            .map(|neighbour| neighbour.map(|value| value.to_string()))
-            .map_err(value_error)
-    }
-}
-
-/// Return all four WGS84_003 planar or ellipsoidal edge neighbours.
-#[pyfunction(signature = (cell, plane=true))]
-fn cell_to_neighbors(cell: &str, plane: bool) -> PyResult<BTreeMap<String, String>> {
-    let cell = parse_cell(cell)?;
-    let dggs = RhealpixDggs::wgs84_003();
-    configured_neighbors(&dggs, &cell, plane)
-}
-
-fn configured_dggs(north_square: u8, south_square: u8) -> RhealpixDggs {
-    RhealpixDggs::new(Ellipsoid::wgs84(), north_square, south_square)
-}
-
-fn configured_neighbors(
-    dggs: &RhealpixDggs,
-    cell: &CellId,
-    plane: bool,
-) -> PyResult<BTreeMap<String, String>> {
-    Ok(configured_neighbor_pairs(dggs, cell, plane)?
-        .into_iter()
-        .collect())
-}
-
-fn configured_neighbor_pairs(
-    dggs: &RhealpixDggs,
-    cell: &CellId,
-    plane: bool,
-) -> PyResult<Vec<(String, String)>> {
-    if plane {
-        Ok(Direction::ALL
-            .into_iter()
-            .map(|direction| {
-                (
-                    direction.as_str().to_owned(),
-                    dggs.planar_neighbor(cell, direction).to_string(),
-                )
-            })
-            .collect())
-    } else {
-        dggs.ellipsoidal_neighbors(cell)
-            .map(|neighbours| {
-                neighbours
-                    .into_iter()
-                    .map(|(direction, neighbour)| (direction.to_string(), neighbour.to_string()))
-                    .collect()
-            })
-            .map_err(value_error)
-    }
-}
-
-/// Compatibility-facade point indexing with upstream coordinate ordering.
-#[pyfunction(name = "_cell_from_point", signature = (resolution, point, plane=true, north_square=0, south_square=0))]
-fn compat_cell_from_point(
-    resolution: u8,
-    point: (f64, f64),
-    plane: bool,
-    north_square: u8,
-    south_square: u8,
-) -> PyResult<Option<String>> {
-    let dggs = configured_dggs(north_square, south_square);
-    let result = if plane {
-        dggs.cell_from_projected(point.0, point.1, resolution)
-    } else {
-        dggs.cell_from_lonlat(point.0, point.1, resolution)
-    };
-    match result {
-        Ok(cell) => Ok(Some(cell.to_string())),
-        Err(Error::OutsideProjection) => Ok(None),
-        Err(error) => Err(value_error(error)),
-    }
-}
-
-/// Compatibility-facade nucleus with upstream coordinate ordering.
-#[pyfunction(name = "_cell_nucleus", signature = (cell, plane=true, north_square=0, south_square=0))]
-fn compat_cell_nucleus(
-    cell: &str,
-    plane: bool,
-    north_square: u8,
-    south_square: u8,
-) -> PyResult<(f64, f64)> {
-    let cell = parse_cell(cell)?;
-    let dggs = configured_dggs(north_square, south_square);
-    if plane {
-        dggs.cell_to_projected(&cell).map_err(value_error)
-    } else {
-        dggs.cell_to_lonlat(&cell).map_err(value_error)
-    }
-}
-
-/// Compatibility-facade centroid with upstream coordinate ordering.
-#[pyfunction(name = "_cell_centroid", signature = (cell, plane=true, north_square=0, south_square=0))]
-fn compat_cell_centroid(
-    cell: &str,
-    plane: bool,
-    north_square: u8,
-    south_square: u8,
-) -> PyResult<(f64, f64)> {
-    let cell = parse_cell(cell)?;
-    let dggs = configured_dggs(north_square, south_square);
-    if plane {
-        dggs.cell_to_projected(&cell).map_err(value_error)
-    } else {
-        dggs.cell_centroid_lonlat(&cell).map_err(value_error)
-    }
-}
-
-/// Compatibility-facade rectangle coverage with upstream coordinate ordering.
-#[pyfunction(name = "_cells_from_region", signature = (resolution, upper_left, lower_right, plane=true, north_square=0, south_square=0))]
-fn compat_cells_from_region(
-    resolution: u8,
-    upper_left: (f64, f64),
-    lower_right: (f64, f64),
-    plane: bool,
-    north_square: u8,
-    south_square: u8,
-) -> PyResult<Vec<Vec<String>>> {
-    let dggs = configured_dggs(north_square, south_square);
-    let rows = if plane {
-        dggs.cells_from_region_projected(resolution, upper_left, lower_right)
-    } else {
-        dggs.cells_from_region_lonlat(resolution, upper_left, lower_right)
-    }
-    .map_err(value_error)?;
-    Ok(rows
-        .into_iter()
-        .map(|row| row.into_iter().map(|cell| cell.to_string()).collect())
-        .collect())
-}
-
-/// Compatibility-facade two-point line coverage with upstream ordering.
-#[pyfunction(name = "_cells_from_line", signature = (resolution, start, end, plane=true, north_square=0, south_square=0))]
-fn compat_cells_from_line(
-    resolution: u8,
-    start: (f64, f64),
-    end: (f64, f64),
-    plane: bool,
-    north_square: u8,
-    south_square: u8,
-) -> PyResult<Vec<String>> {
-    let dggs = configured_dggs(north_square, south_square);
-    let cells = if plane {
-        dggs.cells_from_polyline_projected(resolution, &[start, end])
-    } else {
-        dggs.cells_from_polyline_lonlat(resolution, &[start, end])
-    }
-    .map_err(value_error)?;
-    Ok(cells.into_iter().map(|cell| cell.to_string()).collect())
-}
-
-/// Compatibility-facade vertices with upstream coordinate ordering.
-#[pyfunction(name = "_cell_vertices", signature = (cell, plane=true, trim_dart=false, north_square=0, south_square=0))]
-fn compat_cell_vertices(
-    cell: &str,
-    plane: bool,
-    trim_dart: bool,
-    north_square: u8,
-    south_square: u8,
-) -> PyResult<Vec<(f64, f64)>> {
-    let cell = parse_cell(cell)?;
-    let dggs = configured_dggs(north_square, south_square);
-    if plane {
-        dggs.cell_vertices_projected(&cell)
-            .map(|points| points.into_iter().collect())
-            .map_err(value_error)
-    } else {
-        dggs.cell_vertices_lonlat(&cell, trim_dart)
-            .map_err(value_error)
-    }
-}
-
-/// Compatibility-facade boundary with upstream coordinate ordering.
-#[pyfunction(name = "_cell_boundary", signature = (cell, n=2, plane=true, interior=false, north_square=0, south_square=0))]
-fn compat_cell_boundary(
-    cell: &str,
-    n: usize,
-    plane: bool,
-    interior: bool,
-    north_square: u8,
-    south_square: u8,
-) -> PyResult<Vec<(f64, f64)>> {
-    let cell = parse_cell(cell)?;
-    let dggs = configured_dggs(north_square, south_square);
-    if plane {
-        dggs.cell_boundary_projected(&cell, n, interior)
-            .map_err(value_error)
-    } else {
-        dggs.cell_boundary_lonlat_compatible(&cell, n, interior)
-            .map_err(value_error)
-    }
-}
-
-/// Compatibility-facade neighbour with configurable polar squares.
-#[pyfunction(name = "_cell_neighbor", signature = (cell, direction, plane=true, north_square=0, south_square=0))]
-fn compat_cell_neighbor(
-    cell: &str,
-    direction: &str,
-    plane: bool,
-    north_square: u8,
-    south_square: u8,
-) -> PyResult<Option<String>> {
-    let cell = parse_cell(cell)?;
-    let dggs = configured_dggs(north_square, south_square);
-    if plane {
-        let direction = match Direction::from_str(direction) {
-            Ok(direction) => direction,
-            Err(_) => return Ok(None),
-        };
-        Ok(Some(dggs.planar_neighbor(&cell, direction).to_string()))
-    } else {
-        let direction = match EllipsoidalDirection::from_str(direction) {
-            Ok(direction) => direction,
-            Err(_) => return Ok(None),
-        };
-        dggs.ellipsoidal_neighbor(&cell, direction)
-            .map(|neighbour| neighbour.map(|value| value.to_string()))
-            .map_err(value_error)
-    }
-}
-
-/// Compatibility-facade neighbours with configurable polar squares.
-#[pyfunction(name = "_cell_neighbors", signature = (cell, plane=true, north_square=0, south_square=0))]
-fn compat_cell_neighbors(
-    cell: &str,
-    plane: bool,
-    north_square: u8,
-    south_square: u8,
-) -> PyResult<Vec<(String, String)>> {
-    let cell = parse_cell(cell)?;
-    configured_neighbor_pairs(&configured_dggs(north_square, south_square), &cell, plane)
-}
-
-/// Compatibility-facade cell width or area.
-#[pyfunction(name = "_cell_metric", signature = (resolution, metric, plane=true))]
-fn compat_cell_metric(resolution: u8, metric: &str, plane: bool) -> PyResult<Option<f64>> {
-    let dggs = RhealpixDggs::wgs84_003();
-    match metric {
-        "width" => {
-            if plane {
-                dggs.cell_width(resolution).map(Some).map_err(value_error)
-            } else {
-                Ok(None)
-            }
-        }
-        "area" => {
-            if plane {
-                dggs.cell_width(resolution)
-                    .map(|width| Some(width * width))
-                    .map_err(value_error)
-            } else {
-                dggs.cell_area(resolution).map(Some).map_err(value_error)
-            }
-        }
-        _ => Err(PyValueError::new_err("metric must be 'width' or 'area'")),
-    }
 }
 
 /// Return the direct parent or the ancestor at `resolution`.
@@ -471,68 +85,6 @@ fn cell_to_children(cell: &str, resolution: Option<u8>) -> PyResult<Vec<String>>
     cell.descendants(resolution)
         .map(|cells| cells.into_iter().map(|value| value.to_string()).collect())
         .map_err(value_error)
-}
-
-/// Return the next cell at the requested resolution in post-order traversal.
-#[pyfunction(signature = (cell, resolution=None))]
-fn cell_to_successor(cell: &str, resolution: Option<u8>) -> PyResult<Option<String>> {
-    let cell = parse_cell(cell)?;
-    let successor = match resolution {
-        Some(resolution) => cell.successor_at(resolution).map_err(value_error)?,
-        None => cell.successor(),
-    };
-    Ok(successor.map(|value| value.to_string()))
-}
-
-/// Return the previous cell at the requested resolution in post-order traversal.
-#[pyfunction(signature = (cell, resolution=None))]
-fn cell_to_predecessor(cell: &str, resolution: Option<u8>) -> PyResult<Option<String>> {
-    let cell = parse_cell(cell)?;
-    let predecessor = match resolution {
-        Some(resolution) => cell.predecessor_at(resolution).map_err(value_error)?,
-        None => cell.predecessor(),
-    };
-    Ok(predecessor.map(|value| value.to_string()))
-}
-
-/// Return the stable zero-based level-order index.
-#[pyfunction]
-fn cell_to_level_order_index(cell: &str) -> PyResult<u64> {
-    Ok(parse_cell(cell)?.level_order_index())
-}
-
-/// Construct a cell from its stable zero-based level-order index.
-#[pyfunction]
-fn level_order_index_to_cell(index: u64) -> PyResult<String> {
-    CellId::from_level_order_index(index)
-        .map(|cell| cell.to_string())
-        .map_err(value_error)
-}
-
-/// Return the zero-based post-order index in the finite hierarchy.
-#[pyfunction]
-fn cell_to_post_order_index(cell: &str) -> PyResult<u64> {
-    Ok(parse_cell(cell)?.post_order_index())
-}
-
-/// Construct a cell from its zero-based post-order index.
-#[pyfunction]
-fn post_order_index_to_cell(index: u64) -> PyResult<String> {
-    CellId::from_post_order_index(index)
-        .map(|cell| cell.to_string())
-        .map_err(value_error)
-}
-
-/// Compare two cell IDs using upstream post-order traversal.
-#[pyfunction(name = "_compare_cells")]
-fn compat_compare_cells(left: &str, right: &str) -> PyResult<i8> {
-    let left = parse_cell(left)?;
-    let right = parse_cell(right)?;
-    Ok(match left.cmp(&right) {
-        Ordering::Less => -1,
-        Ordering::Equal => 0,
-        Ordering::Greater => 1,
-    })
 }
 
 /// Return the cell resolution.
@@ -616,24 +168,9 @@ fn _rhealpixdggs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(latlng_to_cell, module)?)?;
     module.add_function(wrap_pyfunction!(latlngs_to_cells, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_latlng, module)?)?;
-    module.add_function(wrap_pyfunction!(cell_to_centroid, module)?)?;
-    module.add_function(wrap_pyfunction!(bbox_to_cells, module)?)?;
-    module.add_function(wrap_pyfunction!(line_to_cells, module)?)?;
-    module.add_function(wrap_pyfunction!(polygon_to_cells, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_boundary, module)?)?;
-    module.add_function(wrap_pyfunction!(cell_to_boundary_densified, module)?)?;
-    module.add_function(wrap_pyfunction!(get_cell_region, module)?)?;
-    module.add_function(wrap_pyfunction!(get_cell_shape, module)?)?;
-    module.add_function(wrap_pyfunction!(cell_to_neighbor, module)?)?;
-    module.add_function(wrap_pyfunction!(cell_to_neighbors, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_parent, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_children, module)?)?;
-    module.add_function(wrap_pyfunction!(cell_to_successor, module)?)?;
-    module.add_function(wrap_pyfunction!(cell_to_predecessor, module)?)?;
-    module.add_function(wrap_pyfunction!(cell_to_level_order_index, module)?)?;
-    module.add_function(wrap_pyfunction!(level_order_index_to_cell, module)?)?;
-    module.add_function(wrap_pyfunction!(cell_to_post_order_index, module)?)?;
-    module.add_function(wrap_pyfunction!(post_order_index_to_cell, module)?)?;
     module.add_function(wrap_pyfunction!(get_resolution, module)?)?;
     module.add_function(wrap_pyfunction!(get_base_cell_number, module)?)?;
     module.add_function(wrap_pyfunction!(is_valid_cell, module)?)?;
@@ -642,17 +179,6 @@ fn _rhealpixdggs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(cell_area, module)?)?;
     module.add_function(wrap_pyfunction!(compact_cells, module)?)?;
     module.add_function(wrap_pyfunction!(uncompact_cells, module)?)?;
-    module.add_function(wrap_pyfunction!(compat_cell_from_point, module)?)?;
-    module.add_function(wrap_pyfunction!(compat_cell_nucleus, module)?)?;
-    module.add_function(wrap_pyfunction!(compat_cell_centroid, module)?)?;
-    module.add_function(wrap_pyfunction!(compat_cells_from_region, module)?)?;
-    module.add_function(wrap_pyfunction!(compat_cells_from_line, module)?)?;
-    module.add_function(wrap_pyfunction!(compat_cell_vertices, module)?)?;
-    module.add_function(wrap_pyfunction!(compat_cell_boundary, module)?)?;
-    module.add_function(wrap_pyfunction!(compat_cell_neighbor, module)?)?;
-    module.add_function(wrap_pyfunction!(compat_cell_neighbors, module)?)?;
-    module.add_function(wrap_pyfunction!(compat_cell_metric, module)?)?;
-    module.add_function(wrap_pyfunction!(compat_compare_cells, module)?)?;
     module.add("MAX_RESOLUTION", MAX_RESOLUTION)?;
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
