@@ -10,8 +10,8 @@ version = "0.1.0-alpha.1"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
-repository = "https://github.com/manaakiwhenua/rhealpixdggs-rs"
-authors = ["rHEALPixDGGS Rust contributors"]
+repository = "https://github.com/ChocopieKewpie/rhealpixdggs-rs"
+authors = ["James Ardo"]
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
