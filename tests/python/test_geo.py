@@ -67,6 +67,30 @@ def test_geometry_adapter_validates_polygonal_input() -> None:
         geo.geometry_to_cells(line, 4)
 
 
+def test_geometry_adapter_accepts_tiny_bisection_fragments() -> None:
+    tiny = Polygon(
+        [
+            (175.0, -40.0),
+            (175.000_000_1, -40.0),
+            (175.000_000_1, -39.999_999_9),
+            (175.0, -39.999_999_9),
+            (175.0, -40.0),
+        ]
+    )
+    sliver = Polygon(
+        [
+            (175.0, -40.0),
+            (175.001, -40.0),
+            (175.001, -39.999_999_999_9),
+            (175.0, -39.999_999_999_9),
+            (175.0, -40.0),
+        ]
+    )
+
+    for geometry in (tiny, sliver):
+        assert isinstance(geo.geometry_to_cells(geometry, 8), list)
+
+
 def test_geopackage_round_trip_when_geo_extra_is_installed(tmp_path: Path) -> None:
     geopandas = pytest.importorskip("geopandas")
     pytest.importorskip("pyogrio")

@@ -159,8 +159,37 @@ def test_coverage_validation() -> None:
         rh.polygon_to_cells([(0.0, 0.0), (1.0, 1.0)], 3)
     with pytest.raises(ValueError, match="zero area"):
         rh.polygon_to_cells([(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)], 3)
+    step = 2.0**-20
+    with pytest.raises(ValueError, match="zero area"):
+        rh.polygon_to_cells(
+            [
+                (-40.0, 175.0),
+                (-40.0 + step, 175.0 + step),
+                (-40.0 + 2.0 * step, 175.0 + 2.0 * step),
+            ],
+            8,
+        )
     with pytest.raises(ValueError, match="latitude"):
         rh.bbox_to_cells(91.0, 0.0, 1.0, 0.0, 3)
+
+
+def test_polygon_validation_accepts_tiny_nz_fragments() -> None:
+    tiny = [
+        (-40.0, 175.0),
+        (-40.0, 175.000_000_1),
+        (-39.999_999_9, 175.000_000_1),
+        (-39.999_999_9, 175.0),
+    ]
+    sliver = [
+        (-40.0, 175.0),
+        (-40.0, 175.001),
+        (-39.999_999_999_9, 175.001),
+        (-39.999_999_999_9, 175.0),
+    ]
+
+    for exterior in (tiny, sliver):
+        cells = rh.polygon_to_cells(exterior, 8)
+        assert rh.polygon_to_cells(list(reversed(exterior)), 8) == cells
 
 
 def test_upstream_facade_region_line_and_centroid() -> None:

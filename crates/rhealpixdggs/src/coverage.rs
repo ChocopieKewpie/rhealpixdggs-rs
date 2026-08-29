@@ -10,6 +10,7 @@ use crate::projection;
 
 const MAX_COVERAGE_CELLS: usize = 10_000_000;
 const EPSILON: f64 = 1e-11;
+const AREA_EPSILON_MULTIPLIER: f64 = 64.0;
 
 type Point = (f64, f64);
 
@@ -555,7 +556,7 @@ fn validate_ring(
     } else {
         ring.to_vec()
     };
-    if signed_area(&values).abs() <= EPSILON {
+    if signed_area(&values).abs() <= area_tolerance(&values) {
         return Err(Error::InvalidGeometry(format!("{name} ring has zero area")));
     }
     Ok(())
@@ -625,14 +626,34 @@ fn bounds(points: &[Point]) -> (f64, f64, f64, f64) {
 }
 
 fn signed_area(ring: &[Point]) -> f64 {
-    (0..ring.len())
-        .map(|index| {
-            let current = ring[index];
-            let next = ring[(index + 1) % ring.len()];
-            current.0 * next.1 - next.0 * current.1
-        })
-        .sum::<f64>()
-        / 2.0
+    let Some(&origin) = ring.first() else {
+        return 0.0;
+    };
+
+    // Triangulate relative to a local origin. The area is translation
+    // invariant, while the smaller local coordinates avoid cancellation when
+    // a tiny ring is located at a large absolute longitude or projected x.
+    let mut sum = 0.0;
+    let mut compensation = 0.0;
+    for edge in ring[1..].windows(2) {
+        let term = cross(subtract(edge[0], origin), subtract(edge[1], origin));
+        let next = sum + term;
+        // Neumaier summation also limits cancellation between triangle terms
+        // for concave rings without changing the orientation sign.
+        compensation += if sum.abs() >= term.abs() {
+            (sum - next) + term
+        } else {
+            (term - next) + sum
+        };
+        sum = next;
+    }
+    (sum + compensation) / 2.0
+}
+
+fn area_tolerance(ring: &[Point]) -> f64 {
+    let (x_min, x_max, y_min, y_max) = bounds(ring);
+    let span = (x_max - x_min).max(y_max - y_min);
+    AREA_EPSILON_MULTIPLIER * f64::EPSILON * span * span
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -948,6 +969,62 @@ mod tests {
             )
             .unwrap();
         assert!(without_center.len() < 9);
+    }
+
+    #[test]
+    fn polygon_validation_rejects_a_collinear_ring() {
+        let dggs = RhealpixDggs::wgs84_003();
+        let step = 2.0_f64.powi(-20);
+        let collinear = [
+            (175.0, -40.0),
+            (175.0 + step, -40.0 + step),
+            (175.0 + 2.0 * step, -40.0 + 2.0 * step),
+        ];
+
+        let error = dggs
+            .cells_from_polygon_lonlat(8, &collinear, &[], false)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::InvalidGeometry(message) if message == "exterior ring has zero area"
+        ));
+    }
+
+    #[test]
+    fn polygon_validation_accepts_a_tiny_nz_ring_in_both_orientations() {
+        let dggs = RhealpixDggs::wgs84_003();
+        let exterior = [
+            (175.0, -40.0),
+            (175.000_000_1, -40.0),
+            (175.000_000_1, -39.999_999_9),
+            (175.0, -39.999_999_9),
+        ];
+        let reversed: Vec<_> = exterior.iter().copied().rev().collect();
+
+        let forward_area = signed_area(&exterior);
+        let reverse_area = signed_area(&reversed);
+        assert!(forward_area > area_tolerance(&exterior));
+        assert!(reverse_area < -area_tolerance(&reversed));
+        assert_eq!(forward_area, -reverse_area);
+        dggs.cells_from_polygon_lonlat(8, &exterior, &[], false)
+            .unwrap();
+        dggs.cells_from_polygon_lonlat(8, &reversed, &[], false)
+            .unwrap();
+    }
+
+    #[test]
+    fn polygon_validation_accepts_a_thin_bisection_sliver() {
+        let dggs = RhealpixDggs::wgs84_003();
+        let sliver = [
+            (175.0, -40.0),
+            (175.001, -40.0),
+            (175.001, -39.999_999_999_9),
+            (175.0, -39.999_999_999_9),
+        ];
+
+        assert!(signed_area(&sliver).abs() > area_tolerance(&sliver));
+        dggs.cells_from_polygon_lonlat(8, &sliver, &[], false)
+            .unwrap();
     }
 
     #[test]
