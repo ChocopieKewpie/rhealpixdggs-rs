@@ -54,14 +54,31 @@ for a future macOS runner.
 Performance claims will be published only with reproducible fixtures and both
 single-point and bulk measurements.
 
-## M3 — Additional language bindings
+## M2.1 — Core numerical hardening
+
+- [x] Use translation-stable polygon area accumulation
+- [x] Replace the shared geometry epsilon with a scale-relative area tolerance
+- [x] Exercise tiny rings across global translations and representable scales
+- [x] Cover reversed orientation, thin slivers, the antimeridian, and both poles
+- [ ] Add property-based generation and a persistent fuzzing corpus
+- [ ] Publish the 0.8.1 Python wheels and Rust crate
+
+## M3 — Core topology and identifier contract
+
+- [ ] Add `grid_disk` and `grid_ring` traversal across face boundaries
+- [ ] Add neighbour predicates, followed by distance and path operations
+- [ ] Freeze and document the cross-language `u64` bit/range contract
+- [ ] Publish language-neutral identifier and topology test vectors
+- [ ] Decide whether 1.0 remains fixed to aperture 9
+
+## M4 — Additional language bindings
 
 - [ ] Stable C ABI over integer/string IDs and flat coordinate buffers
 - [ ] WebAssembly/JavaScript package
 - [ ] Bindings selected from real users: likely R, Java, or C# next
 - [x] Shared conformance fixtures consumed by the core and implemented bindings
 
-## M4 — Standards and ecosystem
+## M5 — Standards and ecosystem
 
 - [ ] Track OGC Topic 21 / ISO 19170-1 conformance work
 - [ ] GeoArrow and Apache Arrow batch interfaces

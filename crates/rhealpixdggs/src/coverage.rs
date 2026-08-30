@@ -1028,6 +1028,87 @@ mod tests {
     }
 
     #[test]
+    fn polygon_area_validation_is_location_and_scale_invariant() {
+        let dggs = RhealpixDggs::wgs84_003();
+        let locations = [
+            (-179.0, -80.0),
+            (-120.0, 45.0),
+            (0.0, 0.0),
+            (120.0, -45.0),
+            (179.0, 80.0),
+        ];
+
+        for exponent in [10, 20, 30, 40] {
+            let width = 2.0_f64.powi(-exponent);
+            let height = 2.0_f64.powi(-exponent - 2);
+            let expected_area = width * height;
+
+            for (longitude, latitude) in locations {
+                let exterior = [
+                    (longitude, latitude),
+                    (longitude + width, latitude),
+                    (longitude + width, latitude + height),
+                    (longitude, latitude + height),
+                ];
+                let reversed: Vec<_> = exterior.iter().copied().rev().collect();
+                let forward_area = signed_area(&exterior);
+                let reverse_area = signed_area(&reversed);
+                let roundoff = expected_area * 8.0 * f64::EPSILON;
+
+                assert!(forward_area > area_tolerance(&exterior));
+                assert!(reverse_area < -area_tolerance(&reversed));
+                assert!((forward_area - expected_area).abs() <= roundoff);
+                assert!((forward_area + reverse_area).abs() <= roundoff);
+
+                let forward = dggs
+                    .cells_from_polygon_lonlat(8, &exterior, &[], false)
+                    .unwrap();
+                let reverse = dggs
+                    .cells_from_polygon_lonlat(8, &reversed, &[], false)
+                    .unwrap();
+                assert_eq!(forward, reverse);
+            }
+        }
+    }
+
+    #[test]
+    fn polygon_validation_accepts_tiny_antimeridian_and_polar_rings() {
+        let dggs = RhealpixDggs::wgs84_003();
+        let step = 2.0_f64.powi(-20);
+        let cases = [
+            [
+                (180.0 - step, -10.0),
+                (-180.0 + step, -10.0),
+                (-180.0 + step, -10.0 + step),
+                (180.0 - step, -10.0 + step),
+            ],
+            [
+                (45.0, 90.0 - 4.0 * step),
+                (45.0 + step, 90.0 - 4.0 * step),
+                (45.0 + step, 90.0 - 3.0 * step),
+                (45.0, 90.0 - 3.0 * step),
+            ],
+            [
+                (-45.0, -90.0 + 3.0 * step),
+                (-45.0 + step, -90.0 + 3.0 * step),
+                (-45.0 + step, -90.0 + 4.0 * step),
+                (-45.0, -90.0 + 4.0 * step),
+            ],
+        ];
+
+        for exterior in cases {
+            let reversed: Vec<_> = exterior.iter().copied().rev().collect();
+            let forward = dggs
+                .cells_from_polygon_lonlat(8, &exterior, &[], false)
+                .unwrap();
+            let reverse = dggs
+                .cells_from_polygon_lonlat(8, &reversed, &[], false)
+                .unwrap();
+            assert_eq!(forward, reverse);
+        }
+    }
+
+    #[test]
     fn centroid_integration_stays_inside_its_cell() {
         let dggs = RhealpixDggs::new(Ellipsoid::wgs84(), 1, 3);
         for identifier in ["P2", "N", "N0", "N43", "S62"] {

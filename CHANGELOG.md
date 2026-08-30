@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.8.0 (unreleased)
+## 0.8.1 (unreleased)
+
+- Made polygon ring-area validation robust for tiny and sliver fragments by
+  translating coordinates before area accumulation and using a scale-relative
+  area tolerance instead of the shared geometry epsilon.
+- Added global regression sweeps proving that tiny polygon validation remains
+  stable across coordinate translations, scale changes, ring orientation, the
+  antimeridian, and both polar regions.
+
+## 0.8.0
 
 - Added region and ellipsoidal shape classification in the Rust core.
 - Added upstream-compatible geographic vertex ordering and optional dart
@@ -48,9 +57,6 @@
   their byte-level SHA-256 provenance checks are reproducible in CI.
 - Stabilized the GIL-release concurrency test on fast Windows runners by
   removing its startup sleep and using a longer single Rust bulk operation.
-- Made polygon ring-area validation robust for tiny and sliver fragments by
-  translating coordinates before area accumulation and using a scale-relative
-  area tolerance instead of the shared geometry epsilon.
 - Recorded the Windows x86_64 M2 result and explicitly deferred macOS arm64 as
   TBD until suitable hardware or a hosted run is available.
 

@@ -192,6 +192,57 @@ def test_polygon_validation_accepts_tiny_nz_fragments() -> None:
         assert rh.polygon_to_cells(list(reversed(exterior)), 8) == cells
 
 
+def test_polygon_validation_is_location_and_scale_invariant() -> None:
+    locations = [
+        (-80.0, -179.0),
+        (45.0, -120.0),
+        (0.0, 0.0),
+        (-45.0, 120.0),
+        (80.0, 179.0),
+    ]
+
+    for exponent in (10, 20, 30, 40):
+        width = 2.0**-exponent
+        height = 2.0 ** (-exponent - 2)
+        for latitude, longitude in locations:
+            exterior = [
+                (latitude, longitude),
+                (latitude, longitude + width),
+                (latitude + height, longitude + width),
+                (latitude + height, longitude),
+            ]
+            cells = rh.polygon_to_cells(exterior, 8)
+            assert rh.polygon_to_cells(list(reversed(exterior)), 8) == cells
+
+
+def test_polygon_validation_accepts_tiny_antimeridian_and_polar_rings() -> None:
+    step = 2.0**-20
+    cases = [
+        [
+            (-10.0, 180.0 - step),
+            (-10.0, -180.0 + step),
+            (-10.0 + step, -180.0 + step),
+            (-10.0 + step, 180.0 - step),
+        ],
+        [
+            (90.0 - 4.0 * step, 45.0),
+            (90.0 - 4.0 * step, 45.0 + step),
+            (90.0 - 3.0 * step, 45.0 + step),
+            (90.0 - 3.0 * step, 45.0),
+        ],
+        [
+            (-90.0 + 3.0 * step, -45.0),
+            (-90.0 + 3.0 * step, -45.0 + step),
+            (-90.0 + 4.0 * step, -45.0 + step),
+            (-90.0 + 4.0 * step, -45.0),
+        ],
+    ]
+
+    for exterior in cases:
+        cells = rh.polygon_to_cells(exterior, 8)
+        assert rh.polygon_to_cells(list(reversed(exterior)), 8) == cells
+
+
 def test_upstream_facade_region_line_and_centroid() -> None:
     dggs = rh.RHEALPixDGGS()
     rows = dggs.cells_from_region(1, (0.0, 60.0), (90.0, 0.0), plane=False)

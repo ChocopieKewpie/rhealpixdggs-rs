@@ -3,8 +3,9 @@
 A Rust-first implementation of the aperture-9 rHEALPix Discrete Global Grid
 System, with Python as the first supported language binding.
 
-> **Status: pre-1.0; version 0.8.0 includes completed M1 semantic parity, the
-> M2 bulk API, and optional GeoPackage polygon conversion.** Point indexing,
+> **Status: pre-1.0; version 0.8.1 includes completed M1 semantic parity, the
+> M2 bulk API, robust small-polygon validation, and optional GeoPackage polygon
+> conversion.** Point indexing,
 > projection, shape-aware vertices,
 > exact densified boundaries, planar and ellipsoidal neighbours, hierarchy
 > traversal and ordering, equal-area metrics, stable integer IDs, dependency-
