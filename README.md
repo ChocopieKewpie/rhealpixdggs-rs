@@ -3,9 +3,9 @@
 A Rust-first implementation of the aperture-9 rHEALPix Discrete Global Grid
 System, with Python as the first supported language binding.
 
-> **Status: pre-1.0; version 0.8.1 includes completed M1 semantic parity, the
-> M2 bulk API, robust small-polygon validation, and optional GeoPackage polygon
-> conversion.** Point indexing,
+> **Status: pre-1.0; version 0.9.0 includes completed M1 semantic parity, the
+> M2 bulk API, robust small-polygon validation, deterministic grid-disk/ring
+> topology, and optional GeoPackage polygon conversion.** Point indexing,
 > projection, shape-aware vertices,
 > exact densified boundaries, planar and ellipsoidal neighbours, hierarchy
 > traversal and ordering, equal-area metrics, stable integer IDs, dependency-
@@ -62,6 +62,9 @@ assert len(dense_boundary) == 60  # exactly 4 * 16 - 4
 children = rh.cell_to_children(cell)
 neighbors = rh.cell_to_neighbors(cell)
 geographic_neighbors = rh.cell_to_neighbors(cell, plane=False)
+nearby = rh.grid_disk(cell, 2)
+second_ring = rh.grid_ring(cell, 2)
+assert all(rh.are_neighbor_cells(cell, value) for value in rh.grid_ring(cell, 1))
 
 line_cells = rh.line_to_cells([(-40.356, 175.611), (-40.35, 175.62)], 12)
 polygon_cells = rh.polygon_to_cells(
@@ -202,6 +205,7 @@ let (longitude, latitude) = dggs.cell_to_lonlat(&cell)?;
 | Exact densified projected/geographic boundaries | Yes | Yes | Differential-tested across shapes and polar layouts |
 | Planar edge neighbours | Yes | Yes | Golden-tested, including polar rotations |
 | Ellipsoidal edge neighbours | Yes | Yes | Exhaustively differential-tested through resolution 3 |
+| Grid disk/ring and edge-neighbour predicate | Yes | Yes | Seam- and polar-layout-tested |
 | Parent, children, descendants | Yes | Yes | Yes |
 | Post-order comparison and predecessor/successor traversal | Yes | Yes | Exhaustively differential-tested through resolution 3 |
 | Level/post-order index ↔ cell | Yes | Yes | Differential-tested; two upstream defects corrected |

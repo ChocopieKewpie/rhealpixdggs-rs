@@ -11,6 +11,7 @@ mod dggs;
 mod ellipsoid;
 mod error;
 mod projection;
+mod topology;
 
 pub use bulk::{
     BOUNDARY_PARALLEL_THRESHOLD, POINT_PARALLEL_THRESHOLD, REGION_PARALLEL_THRESHOLD,

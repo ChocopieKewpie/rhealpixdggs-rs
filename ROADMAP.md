@@ -65,8 +65,9 @@ single-point and bulk measurements.
 
 ## M3 — Core topology and identifier contract
 
-- [ ] Add `grid_disk` and `grid_ring` traversal across face boundaries
-- [ ] Add neighbour predicates, followed by distance and path operations
+- [x] Add `grid_disk` and `grid_ring` traversal across face boundaries
+- [x] Add a same-resolution edge-neighbour predicate
+- [ ] Add distance and path operations
 - [ ] Freeze and document the cross-language `u64` bit/range contract
 - [ ] Publish language-neutral identifier and topology test vectors
 - [ ] Decide whether 1.0 remains fixed to aperture 9

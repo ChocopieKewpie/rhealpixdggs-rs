@@ -31,5 +31,9 @@ harness = false
 name = "bulk"
 harness = false
 
+[[bench]]
+name = "topology"
+harness = false
+
 [lints]
 workspace = true

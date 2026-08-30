@@ -1,6 +1,17 @@
 # Changelog
 
-## 0.8.1 (unreleased)
+## 0.9.0 (unreleased)
+
+- Added deterministic edge-neighbour `grid_disk` and `grid_ring` traversal to
+  the Rust core and H3-style Python API.
+- Added a same-resolution `are_neighbor_cells` predicate with explicit
+  mismatch errors.
+- Added topology tests for shortest-distance layers, the antimeridian,
+  equatorial/polar face seams, resolution-zero saturation, and all 16 polar
+  square configurations.
+- Added Criterion baselines for equatorial and polar grid traversal.
+
+## 0.8.1
 
 - Made polygon ring-area validation robust for tiny and sliver fragments by
   translating coordinates before area accumulation and using a scale-relative

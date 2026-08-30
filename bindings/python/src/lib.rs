@@ -21,6 +21,11 @@ fn parse_cell(value: &str) -> PyResult<CellId> {
     CellId::from_str(value).map_err(value_error)
 }
 
+fn parse_grid_distance(value: i64) -> PyResult<u32> {
+    u32::try_from(value)
+        .map_err(|_| PyValueError::new_err("grid distance k must be a non-negative 32-bit integer"))
+}
+
 /// Convert latitude/longitude degrees to a WGS84_003 cell ID.
 #[pyfunction]
 fn latlng_to_cell(latitude: f64, longitude: f64, resolution: u8) -> PyResult<String> {
@@ -387,6 +392,36 @@ fn cell_to_neighbors(cell: &str, plane: bool) -> PyResult<BTreeMap<String, Strin
     let cell = parse_cell(cell)?;
     let dggs = RhealpixDggs::wgs84_003();
     configured_neighbors(&dggs, &cell, plane)
+}
+
+/// Return whether two same-resolution WGS84_003 cells share an edge.
+#[pyfunction]
+fn are_neighbor_cells(origin: &str, destination: &str) -> PyResult<bool> {
+    let origin = parse_cell(origin)?;
+    let destination = parse_cell(destination)?;
+    RhealpixDggs::wgs84_003()
+        .are_neighbor_cells(&origin, &destination)
+        .map_err(value_error)
+}
+
+/// Return WGS84_003 cells within `k` edge-neighbour steps.
+#[pyfunction]
+fn grid_disk(py: Python<'_>, origin: &str, k: i64) -> PyResult<Vec<String>> {
+    let origin = parse_cell(origin)?;
+    let k = parse_grid_distance(k)?;
+    py.detach(move || RhealpixDggs::wgs84_003().grid_disk(&origin, k))
+        .map(|cells| cells.into_iter().map(|cell| cell.to_string()).collect())
+        .map_err(value_error)
+}
+
+/// Return WGS84_003 cells exactly `k` edge-neighbour steps away.
+#[pyfunction]
+fn grid_ring(py: Python<'_>, origin: &str, k: i64) -> PyResult<Vec<String>> {
+    let origin = parse_cell(origin)?;
+    let k = parse_grid_distance(k)?;
+    py.detach(move || RhealpixDggs::wgs84_003().grid_ring(&origin, k))
+        .map(|cells| cells.into_iter().map(|cell| cell.to_string()).collect())
+        .map_err(value_error)
 }
 
 fn configured_dggs(north_square: u8, south_square: u8) -> RhealpixDggs {
@@ -941,6 +976,9 @@ fn _rhealpixdggs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(get_cell_shape, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_neighbor, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_neighbors, module)?)?;
+    module.add_function(wrap_pyfunction!(are_neighbor_cells, module)?)?;
+    module.add_function(wrap_pyfunction!(grid_disk, module)?)?;
+    module.add_function(wrap_pyfunction!(grid_ring, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_parent, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_children, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_successor, module)?)?;

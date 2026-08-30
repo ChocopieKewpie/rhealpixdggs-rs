@@ -158,6 +158,40 @@ def test_ellipsoidal_direction_validation() -> None:
         rh.cell_to_neighbor("P2", "left", plane=False)
 
 
+def test_grid_disk_and_ring_use_shortest_edge_distance() -> None:
+    assert rh.grid_ring("Q44", 0) == ["Q44"]
+    assert rh.grid_disk("Q44", 0) == ["Q44"]
+
+    ring_one = rh.grid_ring("Q44", 1)
+    ring_two = rh.grid_ring("Q44", 2)
+    disk_two = rh.grid_disk("Q44", 2)
+    assert ring_one == ["Q41", "Q43", "Q45", "Q47"]
+    assert len(ring_two) == 8
+    assert len(disk_two) == 13
+    assert disk_two == ["Q44", *ring_one, *ring_two]
+
+
+def test_grid_topology_crosses_global_face_seams() -> None:
+    assert "O666" in rh.grid_ring("R888", 1)
+    assert "S666" in rh.grid_ring("Q888", 1)
+    assert rh.grid_ring("N0", 1) == ["N1", "N3", "Q2", "R0"]
+
+    for origin in ("N", "S", "N0", "S43", "R888"):
+        for neighbour in rh.grid_ring(origin, 1):
+            assert rh.are_neighbor_cells(origin, neighbour)
+            assert rh.are_neighbor_cells(neighbour, origin)
+        assert not rh.are_neighbor_cells(origin, origin)
+
+
+def test_grid_topology_validates_resolution_and_expansion() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        rh.grid_ring("Q44", -1)
+    with pytest.raises(ValueError, match="same resolution"):
+        rh.are_neighbor_cells("Q4", "Q44")
+    with pytest.raises(ValueError, match="distance 3000 exceeds the maximum 2235"):
+        rh.grid_disk("Q44444444", 3000)
+
+
 def test_geographic_vertex_order_and_dart_trimming() -> None:
     boundary = rh.cell_to_boundary("N0")
     assert len(boundary) == 4

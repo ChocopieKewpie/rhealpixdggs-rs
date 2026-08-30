@@ -28,6 +28,13 @@ pub enum Error {
         /// Resolution of the input cell.
         cell: u8,
     },
+    /// Two topology inputs have different cell resolutions.
+    ResolutionMismatch {
+        /// Resolution of the origin cell.
+        origin: u8,
+        /// Resolution of the destination cell.
+        destination: u8,
+    },
     /// Geographic input was non-finite or outside its valid range.
     InvalidCoordinate(String),
     /// A line, polygon, or polygon hole is malformed.
@@ -42,6 +49,13 @@ pub enum Error {
     OutsideProjection,
     /// A bulk expansion would allocate an unreasonable number of cells.
     ExpansionTooLarge(u64),
+    /// A grid traversal distance can exceed the allocation safety limit.
+    GridDistanceTooLarge {
+        /// Requested edge-neighbour distance.
+        requested: u32,
+        /// Largest accepted distance at this resolution.
+        maximum: u32,
+    },
     /// A boundary request would allocate an unreasonable number of points.
     BoundaryTooLarge(u64),
 }
@@ -66,6 +80,13 @@ impl fmt::Display for Error {
                 f,
                 "descendant resolution {requested} is coarser than cell resolution {cell}"
             ),
+            Self::ResolutionMismatch {
+                origin,
+                destination,
+            } => write!(
+                f,
+                "cells must have the same resolution; got {origin} and {destination}"
+            ),
             Self::InvalidCoordinate(message) => write!(f, "invalid coordinate: {message}"),
             Self::InvalidGeometry(message) => write!(f, "invalid geometry: {message}"),
             Self::InvalidDirection(value) => write!(
@@ -83,6 +104,10 @@ impl fmt::Display for Error {
             Self::ExpansionTooLarge(count) => write!(
                 f,
                 "operation would produce {count} cells; split the request into smaller regions"
+            ),
+            Self::GridDistanceTooLarge { requested, maximum } => write!(
+                f,
+                "grid distance {requested} exceeds the maximum {maximum} at this resolution"
             ),
             Self::BoundaryTooLarge(count) => write!(
                 f,

@@ -54,6 +54,13 @@ neighbour names are derived from neighbour nuclei; circular longitude offsets
 relative to the source-cell nucleus avoid antimeridian special cases and
 mutable prime-meridian state.
 
+Multi-cell topology uses the four edge-adjacent cells as the graph for this
+quadrilateral DGGS. `grid_disk` and `grid_ring` use breadth-first shortest-path
+layers over that graph. The origin is first in a disk; subsequent distance
+layers and exact-distance rings are sorted by canonical `CellId` order. This
+makes results deterministic across Rust and language bindings while preserving
+polar-face rotations and antimeridian adjacency.
+
 ## Geometry coverage
 
 Coverage accepts ordinary coordinate slices rather than GEOS, Shapely, or
