@@ -1,0 +1,111 @@
+site_name: rHEALPix DGGS
+site_description: Fast aperture-9 rHEALPix indexing for Rust and Python
+site_url: https://chocopiekewpie.github.io/rhealpixdggs-rs/
+repo_url: https://github.com/ChocopieKewpie/rhealpixdggs-rs
+repo_name: ChocopieKewpie/rhealpixdggs-rs
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; 2026 James Ardo and contributors
+
+theme:
+  name: material
+  language: en
+  logo: images/logo-mark.svg
+  favicon: images/logo-mark.svg
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Use dark theme
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Use light theme
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - navigation.path
+    - toc.follow
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.tabs.link
+
+nav:
+  - Overview:
+      - Introduction: index.md
+      - How the grid works: concepts/grid.md
+      - Coordinates and boundaries: concepts/coordinates.md
+      - Cell identifiers: concepts/cell-ids.md
+      - Coverage semantics: concepts/coverage.md
+  - Quickstart:
+      - Installation: getting-started/installation.md
+      - Python: getting-started/python.md
+      - Rust: getting-started/rust.md
+  - Recipes:
+      - Overview: recipes/index.md
+      - Waka Kotahi CAS crash density: recipes/cas-crash-density.md
+      - Polygon to GeoPackage: guides/polygon-to-gpkg.md
+  - API Reference:
+      - Overview: api/index.md
+      - Indexing: api/indexing.md
+      - Cell geometry: api/geometry.md
+      - Hierarchy and identifiers: api/hierarchy.md
+      - Topology and traversal: api/topology.md
+      - Region coverage: api/coverage.md
+      - Compaction: api/compaction.md
+      - NumPy: api/numpy.md
+      - GeoPandas and GeoPackage: api/geo.md
+      - Compatibility facade: api/compat.md
+      - Rust crate: api/rust.md
+  - Engineering:
+      - Architecture: ARCHITECTURE.md
+      - Numerical accuracy: NUMERICAL_ACCURACY.md
+      - Upstream compatibility: UPSTREAM_COMPATIBILITY.md
+      - Upstream v0.7 audit: UPSTREAM_V0_7_AUDIT.md
+      - API status: API_STATUS.md
+      - Development: DEVELOPMENT.md
+      - Figure data attribution: data/NATURAL_EARTH.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+plugins:
+  - search
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ChocopieKewpie/rhealpixdggs-rs
+      name: rHEALPix DGGS on GitHub

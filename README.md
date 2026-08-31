@@ -198,6 +198,8 @@ hardware, commands, raw results, and limitations.
 
 ## Documentation
 
+- [Documentation site source](docs/index.md) — concepts, quickstarts, recipes,
+  and the complete task-oriented API reference
 - [API and implementation status](docs/API_STATUS.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Development and figure regeneration](docs/DEVELOPMENT.md)
@@ -205,6 +207,9 @@ hardware, commands, raw results, and limitations.
 - [Upstream compatibility](docs/UPSTREAM_COMPATIBILITY.md)
 - [Upstream v0.7 issue audit](docs/UPSTREAM_V0_7_AUDIT.md)
 - [Roadmap](ROADMAP.md)
+
+Build the documentation locally with `python -m pip install -r
+docs-requirements.txt` followed by `mkdocs serve`.
 
 Version 0.10.1 is pre-1.0. The WGS84 aperture-9 surface is extensively tested
 against versioned upstream corpora; custom apertures and complete drop-in

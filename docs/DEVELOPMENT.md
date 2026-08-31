@@ -25,6 +25,8 @@ cargo check -p rhealpixdggs-python
 maturin develop --release
 python -m pytest
 python tools/generate_readme_figures.py --check
+python tools/check_documented_python_api.py
+mkdocs build --strict
 ```
 
 The Rust toolchain is pinned in `rust-toolchain.toml`. The Python extension uses
@@ -46,6 +48,20 @@ ring, hierarchy path, and integer mapping before writing the assets. CI uses
 The cover globe additionally reads the bundled public-domain Natural Earth
 1:110m land polygons documented in `docs/data/NATURAL_EARTH.md`; generation
 remains fully offline.
+
+## Documentation site
+
+The user guide and API reference are built with MkDocs Material:
+
+```bash
+python -m pip install -r docs-requirements.txt
+mkdocs serve
+```
+
+Open `http://127.0.0.1:8000` for local live reload. The documentation workflow
+runs `mkdocs build --strict` for pull requests and deploys `main` to GitHub
+Pages. `tools/check_documented_python_api.py` requires every name exported from
+the top-level, NumPy, and GeoPandas modules to have a reference-page heading.
 
 ## Conformance corpora
 
