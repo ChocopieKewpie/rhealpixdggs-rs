@@ -358,6 +358,43 @@ fn cell_to_boundary_densified(
         .map_err(value_error)
 }
 
+/// Return ordered, shared-edge-deduplicated cell boundaries.
+#[pyfunction(signature = (cells, points_per_edge=2, interior=false, parallel=None))]
+fn cells_to_boundaries(
+    py: Python<'_>,
+    cells: Vec<String>,
+    points_per_edge: usize,
+    interior: bool,
+    parallel: Option<bool>,
+) -> PyResult<Vec<Vec<(f64, f64)>>> {
+    let cells = cells
+        .iter()
+        .map(String::as_str)
+        .map(parse_cell)
+        .collect::<PyResult<Vec<_>>>()?;
+    let use_parallel = use_parallel(parallel, cells.len(), BOUNDARY_PARALLEL_THRESHOLD);
+    py.detach(move || {
+        RhealpixDggs::wgs84_003().boundaries_lonlat_bulk(
+            &cells,
+            points_per_edge,
+            interior,
+            use_parallel,
+        )
+    })
+    .map(|boundaries| {
+        boundaries
+            .into_iter()
+            .map(|boundary| {
+                boundary
+                    .into_iter()
+                    .map(|(longitude, latitude)| (latitude, longitude))
+                    .collect()
+            })
+            .collect()
+    })
+    .map_err(value_error)
+}
+
 /// Return the upstream geographic region name for a cell.
 #[pyfunction]
 fn get_cell_region(cell: &str) -> PyResult<&'static str> {
@@ -402,6 +439,107 @@ fn are_neighbor_cells(origin: &str, destination: &str) -> PyResult<bool> {
     RhealpixDggs::wgs84_003()
         .are_neighbor_cells(&origin, &destination)
         .map_err(value_error)
+}
+
+fn configured_cell_relation(
+    dggs: &RhealpixDggs,
+    left: &str,
+    right: &str,
+    relation: &str,
+) -> PyResult<bool> {
+    let left = parse_cell(left)?;
+    let right = parse_cell(right)?;
+    match relation {
+        "equals" => Ok(left.equals(&right)),
+        "within" => Ok(left.within(&right)),
+        "contains" => Ok(left.contains(&right)),
+        "covers" => Ok(left.covers(&right)),
+        "covered_by" => Ok(left.covered_by(&right)),
+        "touches" => dggs.cells_touch(&left, &right).map_err(value_error),
+        "disjoint" => dggs.cells_are_disjoint(&left, &right).map_err(value_error),
+        "intersects" => dggs.cells_intersect(&left, &right).map_err(value_error),
+        "crosses" => Ok(RhealpixDggs::cells_cross(&left, &right)),
+        "overlaps" => Ok(RhealpixDggs::cells_topologically_overlap(&left, &right)),
+        _ => Err(PyValueError::new_err("unknown cell relation")),
+    }
+}
+
+macro_rules! cell_relation_function {
+    ($name:ident, $relation:literal, $doc:literal) => {
+        #[doc = $doc]
+        #[pyfunction]
+        fn $name(left: &str, right: &str) -> PyResult<bool> {
+            configured_cell_relation(&RhealpixDggs::wgs84_003(), left, right, $relation)
+        }
+    };
+}
+
+cell_relation_function!(
+    cell_equals,
+    "equals",
+    "Return whether two WGS84_003 cells are equal."
+);
+cell_relation_function!(
+    cell_within,
+    "within",
+    "Return whether the first cell is within the second."
+);
+cell_relation_function!(
+    cell_contains,
+    "contains",
+    "Return whether the first cell contains the second."
+);
+cell_relation_function!(
+    cell_covers,
+    "covers",
+    "Return whether the first cell covers the second."
+);
+cell_relation_function!(
+    cell_covered_by,
+    "covered_by",
+    "Return whether the first cell is covered by the second."
+);
+cell_relation_function!(
+    cell_touches,
+    "touches",
+    "Return whether two cell boundaries touch without interior overlap."
+);
+cell_relation_function!(
+    cell_disjoint,
+    "disjoint",
+    "Return whether two cells share no point."
+);
+cell_relation_function!(
+    cell_intersects,
+    "intersects",
+    "Return whether two closed cells share any point."
+);
+cell_relation_function!(
+    cell_crosses,
+    "crosses",
+    "Return the OGC crosses predicate for two cells."
+);
+cell_relation_function!(
+    cell_overlaps,
+    "overlaps",
+    "Return the OGC overlaps predicate for two cells."
+);
+
+/// Compatibility-facade cell relation with configurable polar squares.
+#[pyfunction(name = "_cell_relation")]
+fn compat_cell_relation(
+    left: &str,
+    right: &str,
+    relation: &str,
+    north_square: u8,
+    south_square: u8,
+) -> PyResult<bool> {
+    configured_cell_relation(
+        &configured_dggs(north_square, south_square),
+        left,
+        right,
+        relation,
+    )
 }
 
 /// Return WGS84_003 cells within `k` edge-neighbour steps.
@@ -972,11 +1110,22 @@ fn _rhealpixdggs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(polygon_to_cells, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_boundary, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_boundary_densified, module)?)?;
+    module.add_function(wrap_pyfunction!(cells_to_boundaries, module)?)?;
     module.add_function(wrap_pyfunction!(get_cell_region, module)?)?;
     module.add_function(wrap_pyfunction!(get_cell_shape, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_neighbor, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_neighbors, module)?)?;
     module.add_function(wrap_pyfunction!(are_neighbor_cells, module)?)?;
+    module.add_function(wrap_pyfunction!(cell_equals, module)?)?;
+    module.add_function(wrap_pyfunction!(cell_within, module)?)?;
+    module.add_function(wrap_pyfunction!(cell_contains, module)?)?;
+    module.add_function(wrap_pyfunction!(cell_covers, module)?)?;
+    module.add_function(wrap_pyfunction!(cell_covered_by, module)?)?;
+    module.add_function(wrap_pyfunction!(cell_touches, module)?)?;
+    module.add_function(wrap_pyfunction!(cell_disjoint, module)?)?;
+    module.add_function(wrap_pyfunction!(cell_intersects, module)?)?;
+    module.add_function(wrap_pyfunction!(cell_crosses, module)?)?;
+    module.add_function(wrap_pyfunction!(cell_overlaps, module)?)?;
     module.add_function(wrap_pyfunction!(grid_disk, module)?)?;
     module.add_function(wrap_pyfunction!(grid_ring, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_parent, module)?)?;
@@ -1012,6 +1161,7 @@ fn _rhealpixdggs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(compat_cell_neighbors, module)?)?;
     module.add_function(wrap_pyfunction!(compat_cell_metric, module)?)?;
     module.add_function(wrap_pyfunction!(compat_compare_cells, module)?)?;
+    module.add_function(wrap_pyfunction!(compat_cell_relation, module)?)?;
     module.add("MAX_RESOLUTION", MAX_RESOLUTION)?;
     module.add("POINT_PARALLEL_THRESHOLD", POINT_PARALLEL_THRESHOLD)?;
     module.add("BOUNDARY_PARALLEL_THRESHOLD", BOUNDARY_PARALLEL_THRESHOLD)?;

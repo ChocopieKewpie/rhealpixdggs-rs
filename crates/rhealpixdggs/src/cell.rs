@@ -386,9 +386,41 @@ impl CellId {
         self.face == other.face && other.digits.starts_with(&self.digits)
     }
 
-    /// Return whether either cell contains the other.
+    /// Return whether `self` is within `other`, including equality.
+    pub fn within(&self, other: &Self) -> bool {
+        other.contains(self)
+    }
+
+    /// Return whether `self` covers `other`.
+    ///
+    /// For hierarchical DGGS cells this is equivalent to [`Self::contains`]:
+    /// cell boundaries are included in both relations.
+    pub fn covers(&self, other: &Self) -> bool {
+        self.contains(other)
+    }
+
+    /// Return whether `self` is covered by `other`.
+    pub fn covered_by(&self, other: &Self) -> bool {
+        self.within(other)
+    }
+
+    /// Return whether the two identifiers denote the same cell.
+    pub fn equals(&self, other: &Self) -> bool {
+        self == other
+    }
+
+    /// Return whether either cell hierarchically contains the other.
+    ///
+    /// This preserves the historical `rhealpixdggs-py` `Cell.overlaps()`
+    /// meaning. It is not the OGC DE-9IM `overlaps` predicate, which is always
+    /// false for cells in one nested DGGS hierarchy.
     pub fn overlaps(&self, other: &Self) -> bool {
         self.contains(other) || other.contains(self)
+    }
+
+    /// Explicitly named form of the historical hierarchical overlap test.
+    pub fn hierarchically_overlaps(&self, other: &Self) -> bool {
+        self.overlaps(other)
     }
 
     /// Return the number of descendants at `resolution`.
@@ -868,7 +900,13 @@ mod tests {
         let parent: CellId = "Q38".parse().unwrap();
         let child: CellId = "Q381".parse().unwrap();
         assert!(parent.contains(&child));
+        assert!(child.within(&parent));
+        assert!(parent.covers(&child));
+        assert!(child.covered_by(&parent));
+        assert!(parent.equals(&parent));
+        assert!(!parent.equals(&child));
         assert!(parent.overlaps(&child));
+        assert!(parent.hierarchically_overlaps(&child));
         assert!(child.overlaps(&parent));
         assert!(!child.overlaps(&"Q37".parse().unwrap()));
         assert_eq!(child.parent().unwrap(), parent);

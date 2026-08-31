@@ -15,8 +15,8 @@ its `(latitude, longitude)` convention.
 | `RHEALPixDGGS` indexing and coverage | `cell_from_point`, `cell_from_region`, `cell_latitudes`, `cells_from_meridian`, `cells_from_parallel`, `cells_from_line`, `cells_from_region`, `minimal_cover`, `antimeridian_check_and_flip` |
 | `RHEALPixDGGS` metrics | `cell_width`, `cell_area`, `area_error_budget` |
 | `Cell` ordering and traversal | comparisons, `index`, `suid_rowcol`, `successor`, `predecessor`, `subcell`, `subcells`, `rotate_entry`, `rotate` |
-| `Cell` geometry | `width`, `area`, `ul_vertex`, `nw_vertex`, `nucleus`, `vertices`, `xy_range`, `boundary`, `interior`, `contains`, `intersects_meridian`, `intersects_parallel`, `overlaps`, `region_overlaps`, `region`, `ellipsoidal_shape`, `centroid` |
-| `Cell` topology | `neighbor`, `neighbors` |
+| `Cell` geometry | `width`, `area`, `ul_vertex`, `nw_vertex`, `nucleus`, `vertices`, `xy_range`, `boundary`, `interior`, point/cell `contains`, `intersects_meridian`, `intersects_parallel`, `overlaps`, `region_overlaps`, `region`, `ellipsoidal_shape`, `centroid` |
+| `Cell` topology | `neighbor`, `neighbors`, `equals`, `within`, `covers`, `covered_by`, `touches`, `disjoint`, `intersects`, `crosses`, `topologically_overlaps` |
 
 The facade is backed by Rust for projection, indexing, vertices, boundaries,
 centroids, neighbors, coverage, metrics, and traversal indices. Small object
@@ -52,3 +52,15 @@ the geographic budget is `2e-10` degrees. Existing broader geometry fixtures
 retain their documented tolerances. Antimeridian and polar corrections that
 upstream itself documents as unsupported are tested separately and are treated
 as intentional fixes rather than regressions.
+
+The corrected contract also fixes two upstream 0.6.0 defects: quad/cap
+boundaries honour `n` and `interior`, and quad centroids integrate nonlinear
+latitude rather than averaging edge latitudes. The immutable corpus remains
+historical evidence; tests explicitly distinguish corrected behavior where an
+old fixture records one of these defects.
+
+The upstream object method `Cell.overlaps()` means hierarchical containment in
+either direction, so it remains available for migration compatibility. That is
+not the OGC DE-9IM overlaps predicate. New code can use the unambiguous
+`Cell.topologically_overlaps()` method or functional `cell_overlaps()` call;
+both correctly return false for cells in one nested DGGS hierarchy.

@@ -21,6 +21,74 @@ impl RhealpixDggs {
                 .any(|direction| self.planar_neighbor(origin, direction) == *destination))
     }
 
+    /// Return whether two cells have disjoint interiors and touching boundaries.
+    ///
+    /// Cells may have different resolutions. Edge contact is resolved through
+    /// the fine cell's same-resolution neighbours; corner contact is compared
+    /// after folding vertices onto the cube, so polar and antimeridian seams
+    /// require no longitude special cases.
+    pub fn cells_touch(&self, left: &CellId, right: &CellId) -> Result<bool> {
+        if left.hierarchically_overlaps(right) {
+            return Ok(false);
+        }
+
+        if left.resolution() == right.resolution() && self.are_neighbor_cells(left, right)? {
+            return Ok(true);
+        }
+
+        let (coarse, fine) = if left.resolution() < right.resolution() {
+            (left, right)
+        } else {
+            (right, left)
+        };
+        if coarse.resolution() < fine.resolution() {
+            for direction in Direction::ALL {
+                let neighbour = self.planar_neighbor(fine, direction);
+                if neighbour.parent_at(coarse.resolution())? == *coarse {
+                    return Ok(true);
+                }
+            }
+        }
+
+        let left_vertices = self.cell_vertices_projected(left)?;
+        let right_vertices = self.cell_vertices_projected(right)?;
+        let scale = self.cell_width(0)?.max(1.0);
+        for left_vertex in left_vertices {
+            let left_cube = self.xyz_cube_projected(left_vertex.0, left_vertex.1)?;
+            for right_vertex in right_vertices {
+                let right_cube = self.xyz_cube_projected(right_vertex.0, right_vertex.1)?;
+                if cube_points_equal(left_cube, right_cube, scale) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    /// Return whether two cells have no point in common.
+    pub fn cells_are_disjoint(&self, left: &CellId, right: &CellId) -> Result<bool> {
+        Ok(!left.hierarchically_overlaps(right) && !self.cells_touch(left, right)?)
+    }
+
+    /// Return whether two closed cell zones have any point in common.
+    pub fn cells_intersect(&self, left: &CellId, right: &CellId) -> Result<bool> {
+        Ok(!self.cells_are_disjoint(left, right)?)
+    }
+
+    /// Return the OGC `crosses` predicate for two cells.
+    ///
+    /// Nested DGGS cells can contain or touch one another, but cannot cross.
+    pub const fn cells_cross(_left: &CellId, _right: &CellId) -> bool {
+        false
+    }
+
+    /// Return the OGC `overlaps` predicate for two cells.
+    ///
+    /// Partial interior overlap is impossible in one nested DGGS hierarchy.
+    pub const fn cells_topologically_overlap(_left: &CellId, _right: &CellId) -> bool {
+        false
+    }
+
     /// Return cells whose edge-graph distance from `origin` is at most `k`.
     ///
     /// The origin is first. Remaining cells are grouped by increasing graph
@@ -83,6 +151,13 @@ impl RhealpixDggs {
 
         Ok((disk, frontier.into_iter().collect()))
     }
+}
+
+fn cube_points_equal(left: (f64, f64, f64), right: (f64, f64, f64), scale: f64) -> bool {
+    let tolerance = 256.0 * f64::EPSILON * scale;
+    (left.0 - right.0).abs() <= tolerance
+        && (left.1 - right.1).abs() <= tolerance
+        && (left.2 - right.2).abs() <= tolerance
 }
 
 fn ensure_matching_resolutions(origin: &CellId, destination: &CellId) -> Result<()> {
@@ -218,5 +293,59 @@ mod tests {
                 maximum: 2_235,
             }
         );
+    }
+
+    #[test]
+    fn de9im_predicates_cover_nested_edge_corner_and_disjoint_cells() {
+        let dggs = RhealpixDggs::wgs84_003();
+        let nested = [(parse("Q0"), parse("Q00")), (parse("N"), parse("N8"))];
+        for (parent, child) in nested {
+            assert!(!dggs.cells_touch(&parent, &child).unwrap());
+            assert!(!dggs.cells_are_disjoint(&parent, &child).unwrap());
+            assert!(dggs.cells_intersect(&parent, &child).unwrap());
+        }
+
+        for (left, right) in [
+            (parse("Q4"), parse("Q5")),  // same-resolution edge
+            (parse("Q4"), parse("Q8")),  // same-resolution corner
+            (parse("Q0"), parse("Q10")), // fine-to-coarse edge
+            (parse("Q0"), parse("Q40")), // fine-to-coarse corner
+            (parse("N"), parse("O")),    // folded root-face edge
+        ] {
+            assert!(dggs.cells_touch(&left, &right).unwrap(), "{left} {right}");
+            assert!(dggs.cells_touch(&right, &left).unwrap(), "{right} {left}");
+            assert!(!dggs.cells_are_disjoint(&left, &right).unwrap());
+            assert!(dggs.cells_intersect(&left, &right).unwrap());
+        }
+
+        for (left, right) in [
+            (parse("Q0"), parse("Q44")),
+            (parse("N"), parse("S")),
+            (parse("O"), parse("Q")),
+        ] {
+            assert!(!dggs.cells_touch(&left, &right).unwrap(), "{left} {right}");
+            assert!(dggs.cells_are_disjoint(&left, &right).unwrap());
+            assert!(!dggs.cells_intersect(&left, &right).unwrap());
+        }
+
+        assert!(!RhealpixDggs::cells_cross(&parse("Q4"), &parse("Q5")));
+        assert!(!RhealpixDggs::cells_topologically_overlap(
+            &parse("Q4"),
+            &parse("Q5")
+        ));
+    }
+
+    #[test]
+    fn touch_predicate_is_stable_for_every_polar_square_layout() {
+        for north_square in 0..4 {
+            for south_square in 0..4 {
+                let dggs = RhealpixDggs::new(Ellipsoid::wgs84(), north_square, south_square);
+                for origin in [parse("N0"), parse("N43"), parse("S2"), parse("S67")] {
+                    for neighbour in dggs.grid_ring(&origin, 1).unwrap() {
+                        assert!(dggs.cells_touch(&origin, &neighbour).unwrap());
+                    }
+                }
+            }
+        }
     }
 }

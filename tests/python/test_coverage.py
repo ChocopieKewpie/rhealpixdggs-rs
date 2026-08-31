@@ -266,3 +266,16 @@ def test_upstream_facade_region_line_and_centroid() -> None:
     longitude, latitude = cell.centroid(plane=False)
     assert longitude == pytest.approx(90.0, abs=2e-10)
     assert 41.9 < latitude < 74.5
+
+
+def test_quad_centroid_uses_mean_latitude_not_edge_latitude_midpoint() -> None:
+    dggs = rh.RHEALPixDGGS()
+    for identifier, expected_latitude in [
+        ("Q7", -26.790327),
+        ("O0", 26.790327),
+        ("P31", 8.565250),
+    ]:
+        cell = dggs.cell(identifier)
+        longitude, latitude = cell.centroid(plane=False)
+        assert longitude == pytest.approx(cell.nucleus(plane=False)[0], abs=2e-10)
+        assert latitude == pytest.approx(expected_latitude, abs=1e-6)

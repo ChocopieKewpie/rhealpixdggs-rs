@@ -141,16 +141,24 @@ fn wrap_longitude(longitude: f64) -> f64 {
     (longitude + PI).rem_euclid(2.0 * PI) - PI
 }
 
+const SERIES_FLATTENING_LIMIT: f64 = 1.0 / 150.0;
+
 // Sixth-order third-flattening series from Karney's auxiliary-latitude
 // treatment, evaluated in nested form. Gilić and Gašparović (2025) show that
 // this formulation is materially faster and more accurate than the direct
-// equations previously used by rhealpixdggs-py.
+// equations for Earth-like ellipsoids. More strongly flattened public custom
+// ellipsoids use the direct definition instead, because a sixth-order series
+// is no longer an adequate approximation there.
 fn authalic_latitude(phi: f64, eccentricity: f64) -> f64 {
     if eccentricity == 0.0 {
         return phi;
     }
     let e = eccentricity;
     let root = (1.0 - e * e).sqrt();
+    let flattening = 1.0 - root;
+    if flattening > SERIES_FLATTENING_LIMIT {
+        return authalic_latitude_direct(phi, e);
+    }
     let n = (1.0 - root) / (1.0 + root);
 
     phi + n
@@ -186,6 +194,10 @@ fn common_latitude(beta: f64, eccentricity: f64) -> f64 {
     }
     let e = eccentricity;
     let root = (1.0 - e * e).sqrt();
+    let flattening = 1.0 - root;
+    if flattening > SERIES_FLATTENING_LIMIT {
+        return common_latitude_direct(beta, e);
+    }
     let n = (1.0 - root) / (1.0 + root);
 
     beta + n
@@ -213,6 +225,37 @@ fn common_latitude(beta: f64, eccentricity: f64) -> f64 {
             * (768_272.0 / 467_775.0 + n * 455_935_736.0 / 638_512_875.0)
             * (10.0 * beta).sin()
         + n.powi(6) * (4_210_684_958.0 / 1_915_538_625.0) * (12.0 * beta).sin()
+}
+
+fn authalic_latitude_direct(phi: f64, eccentricity: f64) -> f64 {
+    let e = eccentricity;
+    let e_sine = e * phi.sin();
+    let one_minus_e_squared = 1.0 - e * e;
+    let q = one_minus_e_squared * phi.sin() / (1.0 - e_sine * e_sine)
+        - one_minus_e_squared / (2.0 * e) * ((1.0 - e_sine) / (1.0 + e_sine)).ln();
+    let q_p = 1.0 - one_minus_e_squared / (2.0 * e) * ((1.0 - e) / (1.0 + e)).ln();
+    (q / q_p).clamp(-1.0, 1.0).asin()
+}
+
+fn common_latitude_direct(beta: f64, eccentricity: f64) -> f64 {
+    if beta.abs() >= FRAC_PI_2 {
+        return beta.signum() * FRAC_PI_2;
+    }
+
+    // Authalic latitude is strictly monotonic. Bisection is slower than a
+    // Newton step but is guaranteed to converge even for very flat custom
+    // ellipsoids, and this path is never used by WGS84's fast series.
+    let mut lower = -FRAC_PI_2;
+    let mut upper = FRAC_PI_2;
+    for _ in 0..64 {
+        let middle = (lower + upper) / 2.0;
+        if authalic_latitude_direct(middle, eccentricity) < beta {
+            lower = middle;
+        } else {
+            upper = middle;
+        }
+    }
+    (lower + upper) / 2.0
 }
 
 fn healpix_sphere(lambda: f64, phi: f64) -> (f64, f64) {
@@ -477,6 +520,21 @@ mod tests {
                 (recovered - geodetic).abs() <= 4.0 * f64::EPSILON,
                 "{geodetic_degrees}: {recovered:.17e} != {geodetic:.17e}"
             );
+        }
+    }
+
+    #[test]
+    fn strongly_flattened_ellipsoid_uses_stable_direct_authalic_conversion() {
+        let ellipsoid = Ellipsoid::new(1.0, 0.1).unwrap();
+        let geodetic = 30.0_f64.to_radians();
+        let authalic = authalic_latitude(geodetic, ellipsoid.eccentricity());
+        assert!((authalic - 0.464_466_133_465_550_3).abs() <= 2.0e-15);
+        assert!((common_latitude(authalic, ellipsoid.eccentricity()) - geodetic).abs() <= 2.0e-15);
+
+        for point in [(0.0, 0.0), (72.0, 30.0), (-145.0, -75.0), (10.0, 89.0)] {
+            let projected = forward(ellipsoid, point.0, point.1, 2, 1).unwrap();
+            let recovered = inverse(ellipsoid, projected.0, projected.1, 2, 1).unwrap();
+            assert_close(recovered, point, 2.0e-11);
         }
     }
 }

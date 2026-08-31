@@ -1,6 +1,29 @@
 # Changelog
 
-## 0.9.0 (unreleased)
+## 0.10.0 (unreleased)
+
+- Audited all 20 open `rhealpixdggs-py` v0.7.0 milestone issues against the
+  Rust implementation and documented the disposition of each one.
+- Corrected ellipsoidal quad centroids by integrating inverse-projected
+  latitude instead of averaging the two edge latitudes.
+- Corrected `Cell.boundary()` so `n` and `interior` are honoured for quad and
+  cap cells, with the exact `4*n - 4` contract now applying to every shape.
+- Added OGC-style `equals`, `within`, `contains`, `covers`, `covered_by`,
+  `touches`, `disjoint`, `intersects`, `crosses`, and `overlaps` predicates to
+  the Rust core and H3-style Python API. The object facade keeps the upstream
+  hierarchical meaning of `Cell.overlaps()` and exposes unambiguous
+  `Cell.topologically_overlaps()` for the OGC predicate.
+- Added mixed-resolution edge/corner contact detection across equatorial,
+  antimeridian, and polar cube seams.
+- Added shared-edge-deduplicated bulk boundaries. Adjacent cells now reuse one
+  inverse-projected edge in reverse, making both copies byte-identical.
+- Added a direct authalic-latitude path and stable inverse for strongly
+  flattened custom ellipsoids while retaining the optimized series for WGS84.
+- Added regression and Criterion coverage for the corrected centroid,
+  all-shape boundaries, cell predicates, exotic ellipsoids, and dense shared
+  boundary workloads.
+
+## 0.9.0 (2026-08-31)
 
 - Added deterministic edge-neighbour `grid_disk` and `grid_ring` traversal to
   the Rust core and H3-style Python API.

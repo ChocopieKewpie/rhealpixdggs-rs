@@ -25,6 +25,7 @@ from ._rhealpixdggs import (
     _cell_neighbor,
     _cell_neighbors,
     _cell_nucleus,
+    _cell_relation,
     _cell_vertices,
     _cell_vertex,
     _cells_from_line,
@@ -550,11 +551,11 @@ class Cell:
     def boundary(
         self, n: int = 2, plane: bool = True, interior: bool = False
     ) -> list[tuple[float, float]]:
-        """Return the upstream-compatible clockwise cell boundary.
+        """Return the corrected upstream-style clockwise cell boundary.
 
-        Planar boundaries contain exactly ``4*n - 4`` points. Geographic
-        quad and cap cells retain upstream's four-vertex shortcut; dart and
-        skew-quad cells contain ``4*n - 4`` points.
+        Planar and geographic boundaries contain exactly ``4*n - 4`` points
+        for every cell shape. This fixes the upstream 0.6.0 quad/cap shortcut,
+        which silently ignored ``n`` and ``interior``.
         """
         return _cell_boundary(
             self._identifier,
@@ -652,8 +653,62 @@ class Cell:
             return [point(row, column) for column in range(n) for row in range(n)]
         return [[point(row, column) for column in range(n)] for row in range(n)]
 
-    def contains(self, p: tuple[float, float], plane: bool = True) -> bool:
+    def _relation(self, other: Cell, relation: str) -> bool:
+        if not isinstance(other, Cell):
+            raise TypeError("other must be a Cell")
+        if self.rdggs != other.rdggs:
+            raise ValueError("cell relations require the same DGGS configuration")
+        return _cell_relation(
+            self._identifier,
+            other._identifier,
+            relation,
+            self.north_square,
+            self.south_square,
+        )
+
+    def equals(self, other: Cell) -> bool:
+        """Return whether both objects identify the same configured cell."""
+        return self._relation(other, "equals")
+
+    def within(self, other: Cell) -> bool:
+        """Return whether this cell is within ``other``."""
+        return self._relation(other, "within")
+
+    def contains(
+        self, p: tuple[float, float] | Cell, plane: bool = True
+    ) -> bool:
+        """Return whether this cell contains a point or another cell."""
+        if isinstance(p, Cell):
+            return self._relation(p, "contains")
         return self.rdggs.cell_from_point(self.resolution, p, plane) == self
+
+    def covers(self, other: Cell) -> bool:
+        """Return whether this cell covers ``other``."""
+        return self._relation(other, "covers")
+
+    def covered_by(self, other: Cell) -> bool:
+        """Return whether this cell is covered by ``other``."""
+        return self._relation(other, "covered_by")
+
+    def touches(self, other: Cell) -> bool:
+        """Return whether cell boundaries touch without interior overlap."""
+        return self._relation(other, "touches")
+
+    def disjoint(self, other: Cell) -> bool:
+        """Return whether this cell shares no point with ``other``."""
+        return self._relation(other, "disjoint")
+
+    def intersects(self, other: Cell) -> bool:
+        """Return whether the closed cells share any point."""
+        return self._relation(other, "intersects")
+
+    def crosses(self, other: Cell) -> bool:
+        """Return the OGC crosses predicate (always false for DGGS cells)."""
+        return self._relation(other, "crosses")
+
+    def topologically_overlaps(self, other: Cell) -> bool:
+        """Return the OGC overlaps predicate (always false for DGGS cells)."""
+        return self._relation(other, "overlaps")
 
     def intersects_meridian(self, lam: float) -> bool:
         if self.ellipsoidal_shape == "cap":
@@ -679,6 +734,7 @@ class Cell:
         return latitude_min <= phi <= latitude_max
 
     def overlaps(self, other_cell: Cell) -> bool:
+        """Return historical hierarchical overlap, not OGC ``overlaps``."""
         length = min(len(self._identifier), len(other_cell._identifier))
         return self._identifier[:length] == other_cell._identifier[:length]
 

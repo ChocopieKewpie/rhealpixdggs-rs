@@ -108,6 +108,26 @@ fn bulk_boundaries(criterion: &mut Criterion) {
         );
     }
     group.finish();
+
+    let dense_root: rhealpixdggs::CellId = "Q".parse().unwrap();
+    let dense_cells = dense_root.descendants(3).unwrap();
+    let mut dense = criterion.benchmark_group("dense_shared_edge_boundary_n64_r3");
+    dense.throughput(Throughput::Elements(dense_cells.len() as u64));
+    dense.bench_function("scalar_per_cell", |bench| {
+        bench.iter(|| {
+            black_box(&dense_cells)
+                .iter()
+                .map(|cell| dggs.cell_boundary_lonlat(cell, 64, false).unwrap())
+                .collect::<Vec<_>>()
+        });
+    });
+    dense.bench_function("shared_edges", |bench| {
+        bench.iter(|| {
+            dggs.boundaries_lonlat_bulk(black_box(&dense_cells), 64, false, false)
+                .unwrap()
+        });
+    });
+    dense.finish();
 }
 
 fn small_bboxes(count: usize) -> Vec<(f64, f64, f64, f64)> {

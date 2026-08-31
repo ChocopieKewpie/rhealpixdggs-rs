@@ -192,6 +192,49 @@ def test_grid_topology_validates_resolution_and_expansion() -> None:
         rh.grid_disk("Q44444444", 3000)
 
 
+def test_de9im_cell_predicates_cover_hierarchy_edges_corners_and_disjointness() -> None:
+    assert rh.cell_equals("Q4", "Q4")
+    assert not rh.cell_equals("Q4", "Q44")
+    assert rh.cell_contains("Q4", "Q44")
+    assert rh.cell_covers("Q4", "Q44")
+    assert rh.cell_within("Q44", "Q4")
+    assert rh.cell_covered_by("Q44", "Q4")
+
+    for left, right in [("Q4", "Q5"), ("Q4", "Q8"), ("Q0", "Q40"), ("N", "O")]:
+        assert rh.cell_touches(left, right)
+        assert rh.cell_touches(right, left)
+        assert rh.cell_intersects(left, right)
+        assert not rh.cell_disjoint(left, right)
+
+    assert rh.cell_disjoint("N", "S")
+    assert not rh.cell_intersects("N", "S")
+    assert not rh.cell_crosses("Q4", "Q5")
+    assert not rh.cell_overlaps("Q4", "Q44")
+
+
+def test_object_facade_exposes_topological_predicates_without_changing_legacy_overlap() -> None:
+    dggs = rh.RHEALPixDGGS(north_square=2, south_square=1)
+    parent = dggs.cell("Q4")
+    child = dggs.cell("Q44")
+    edge = dggs.cell("Q5")
+    corner = dggs.cell("Q8")
+    assert parent.equals(dggs.cell("Q4"))
+    assert parent.contains(child)
+    assert child.within(parent)
+    assert parent.covers(child)
+    assert child.covered_by(parent)
+    assert parent.touches(edge)
+    assert parent.touches(corner)
+    assert parent.intersects(child)
+    assert not parent.disjoint(child)
+    assert not parent.crosses(edge)
+    assert not parent.topologically_overlaps(child)
+    assert parent.overlaps(child)  # retained upstream hierarchical meaning
+
+    with pytest.raises(ValueError, match="same DGGS"):
+        parent.touches(rh.RHEALPixDGGS().cell("Q5"))
+
+
 def test_geographic_vertex_order_and_dart_trimming() -> None:
     boundary = rh.cell_to_boundary("N0")
     assert len(boundary) == 4
@@ -211,6 +254,16 @@ def test_densified_boundary_has_an_exact_point_count_for_every_shape() -> None:
     for cell in ["P2", "N", "N0", "N43"]:
         assert len(rh.cell_to_boundary_densified(cell, points_per_edge=3)) == 8
         assert len(rh.cell_to_boundary_densified(cell, points_per_edge=5)) == 16
+
+    batch = rh.cells_to_boundaries(
+        ["Q4", "Q5", "N0", "N43"], points_per_edge=5, parallel=False
+    )
+    assert len(batch) == 4
+    assert all(len(boundary) == 16 for boundary in batch)
+    for cell, boundary in zip(["Q4", "Q5", "N0", "N43"], batch):
+        scalar = rh.cell_to_boundary_densified(cell, points_per_edge=5)
+        for actual, expected_point in zip(boundary, scalar):
+            assert actual == pytest.approx(expected_point, abs=2e-10)
 
     expected = [
         (74.424006701996, 90.0),
@@ -265,10 +318,10 @@ def test_upstream_object_facade_boundary_semantics() -> None:
     assert len(dggs.cell("N0").boundary(n=3)) == 8
     assert len(dggs.cell("N0").boundary(n=3, plane=False)) == 8
     assert len(dggs.cell("N43").boundary(n=3, plane=False)) == 8
-    assert len(dggs.cell("P2").boundary(n=3, plane=False)) == 4
-    assert len(dggs.cell("N").boundary(n=3, plane=False)) == 4
-    assert dggs.cell("P2").boundary(n=3, plane=False, interior=True) == (
-        dggs.cell("P2").vertices(plane=False)
+    assert len(dggs.cell("P2").boundary(n=3, plane=False)) == 8
+    assert len(dggs.cell("N").boundary(n=3, plane=False)) == 8
+    assert dggs.cell("P2").boundary(n=3, plane=False, interior=True) != (
+        dggs.cell("P2").boundary(n=3, plane=False)
     )
 
     with pytest.raises(ValueError, match="at least 2"):

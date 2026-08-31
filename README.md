@@ -3,9 +3,10 @@
 A Rust-first implementation of the aperture-9 rHEALPix Discrete Global Grid
 System, with Python as the first supported language binding.
 
-> **Status: pre-1.0; version 0.9.0 includes completed M1 semantic parity, the
+> **Status: pre-1.0; version 0.10.0 includes completed M1 semantic parity, the
 > M2 bulk API, robust small-polygon validation, deterministic grid-disk/ring
-> topology, and optional GeoPackage polygon conversion.** Point indexing,
+> topology, OGC cell predicates, corrected centroids and boundaries, and
+> optional GeoPackage polygon conversion.** Point indexing,
 > projection, shape-aware vertices,
 > exact densified boundaries, planar and ellipsoidal neighbours, hierarchy
 > traversal and ordering, equal-area metrics, stable integer IDs, dependency-
@@ -65,6 +66,11 @@ geographic_neighbors = rh.cell_to_neighbors(cell, plane=False)
 nearby = rh.grid_disk(cell, 2)
 second_ring = rh.grid_ring(cell, 2)
 assert all(rh.are_neighbor_cells(cell, value) for value in rh.grid_ring(cell, 1))
+assert rh.cell_contains(rh.cell_to_parent(cell), cell)
+
+boundaries = rh.cells_to_boundaries(
+    [cell, next(iter(neighbors.values()))], points_per_edge=16
+)
 
 line_cells = rh.line_to_cells([(-40.356, 175.611), (-40.35, 175.62)], 12)
 polygon_cells = rh.polygon_to_cells(
@@ -158,11 +164,12 @@ coverage, and cell metrics. See
 [`docs/UPSTREAM_COMPATIBILITY.md`](docs/UPSTREAM_COMPATIBILITY.md) for the exact
 M1 boundary and deliberate exclusions.
 
-The new functional `cell_to_boundary_densified` call has an exact contract for
-every shape: `points_per_edge >= 2` and `4 * points_per_edge - 4` returned
-points, ordered clockwise from geographic northwest. For migration parity,
-`Cell.boundary()` retains upstream's geographic shortcut: quad and cap cells
-return four vertices, while dart and skew-quad cells use the requested density.
+`cell_to_boundary_densified`, `cells_to_boundaries`, and `Cell.boundary()` have
+one exact contract for every shape: `points_per_edge >= 2` and
+`4 * points_per_edge - 4` returned points, ordered clockwise from geographic
+northwest. This intentionally fixes the upstream 0.6.0 quad/cap shortcut that
+silently ignored both boundary density and the `interior` flag. Dense bulk
+sets reuse each shared edge in reverse, so adjacent copies are byte-identical.
 
 ## Initial performance
 
@@ -198,14 +205,15 @@ let (longitude, latitude) = dggs.cell_to_lonlat(&cell)?;
 |---|---:|---:|---:|
 | WGS84_003 point → cell | Yes | Yes | Golden-tested |
 | NumPy point/cell conversion | Ordered bulk | Yes | Scalar-equivalent |
-| Batch boundaries and bounding boxes | Ordered bulk | Yes | Scalar-equivalent |
+| Batch boundaries and bounding boxes | Shared-edge ordered bulk | Yes | Scalar-equivalent; shared edges byte-identical |
 | Cell → projected/geographic nucleus | Yes | Yes | Golden-tested |
-| Ellipsoidal cell centroid | Yes | Yes | Upstream-compatible quadrature |
+| Ellipsoidal cell centroid | Yes | Yes | Corrected mean-latitude quadrature |
 | Shape classification and geographic vertices | Yes | Yes | Golden-tested, including dart trimming |
 | Exact densified projected/geographic boundaries | Yes | Yes | Differential-tested across shapes and polar layouts |
 | Planar edge neighbours | Yes | Yes | Golden-tested, including polar rotations |
 | Ellipsoidal edge neighbours | Yes | Yes | Exhaustively differential-tested through resolution 3 |
 | Grid disk/ring and edge-neighbour predicate | Yes | Yes | Seam- and polar-layout-tested |
+| OGC cell predicates | Yes | Yes | Hierarchy, edge/corner contact, and cube seams tested |
 | Parent, children, descendants | Yes | Yes | Yes |
 | Post-order comparison and predecessor/successor traversal | Yes | Yes | Exhaustively differential-tested through resolution 3 |
 | Level/post-order index ↔ cell | Yes | Yes | Differential-tested; two upstream defects corrected |
@@ -219,6 +227,8 @@ let (longitude, latitude) = dggs.cell_to_lonlat(&cell)?;
 | Custom aperture / `N_side` | Planned decision | — | No |
 
 See [ROADMAP.md](ROADMAP.md) for the compatibility and performance sequence.
+The disposition of every open upstream `v0.7.0` issue is recorded in
+[`docs/UPSTREAM_V0_7_AUDIT.md`](docs/UPSTREAM_V0_7_AUDIT.md).
 
 ## Development checks
 
@@ -261,9 +271,10 @@ documented deterministic M1 surface.
 Known upstream defects are corrected rather than reproduced: resolution-zero
 level indices are `0..=5` and round-trip correctly, and successor traversal
 past terminal cell `S` returns `None` at finer resolutions instead of raising
-an internal `AttributeError`. Coverage also unwraps antimeridian-crossing lines
-and polygons and explicitly handles polar cap cells, both known limitations in
-the upstream line implementation.
+an internal `AttributeError`. Quad/cap boundaries honour density and inset
+arguments, and quad centroids use their true equal-area mean latitude. Coverage
+also unwraps antimeridian-crossing lines and polygons and explicitly handles
+polar cap cells, both known limitations in the upstream line implementation.
 
 ## Licence and attribution
 

@@ -432,23 +432,18 @@ impl RhealpixDggs {
             .collect()
     }
 
-    /// Return the boundary produced by upstream `Cell.boundary` semantics.
+    /// Return the corrected upstream-style geographic boundary.
     ///
-    /// Geographic quad and cap cells return their four vertices regardless of
-    /// `points_per_edge` or `interior`; dart and skew-quad cells use the exact
-    /// densified boundary. Planar callers should use [`Self::cell_boundary_projected`].
+    /// This method remains for bindings written against the original facade
+    /// name. Unlike `rhealpixdggs-py` 0.6.0, it honours `points_per_edge` and
+    /// `interior` for quad and cap cells as well as darts and skew quads.
     pub fn cell_boundary_lonlat_compatible(
         &self,
         cell: &CellId,
         points_per_edge: usize,
         interior: bool,
     ) -> Result<Vec<(f64, f64)>> {
-        boundary_point_count(points_per_edge)?;
-        if matches!(cell.shape(), CellShape::Quad | CellShape::Cap) {
-            self.cell_vertices_lonlat(cell, false)
-        } else {
-            self.cell_boundary_lonlat(cell, points_per_edge, interior)
-        }
+        self.cell_boundary_lonlat(cell, points_per_edge, interior)
     }
 
     /// Return the edge neighbour in a cardinal direction on the unfolded
@@ -1213,7 +1208,7 @@ mod tests {
     }
 
     #[test]
-    fn boundary_point_contract_is_exact_and_compatibility_is_explicit() {
+    fn boundary_point_contract_is_exact_for_every_shape_and_facade_path() {
         let dggs = RhealpixDggs::wgs84_003();
         for identifier in ["P2", "N", "N0", "N43"] {
             let cell: CellId = identifier.parse().unwrap();
@@ -1236,17 +1231,7 @@ mod tests {
                 let compatible = dggs
                     .cell_boundary_lonlat_compatible(&cell, points_per_edge, true)
                     .unwrap();
-                let expected_compatible =
-                    if matches!(cell.shape(), CellShape::Quad | CellShape::Cap) {
-                        4
-                    } else {
-                        expected
-                    };
-                assert_eq!(
-                    compatible.len(),
-                    expected_compatible,
-                    "compatible {identifier}"
-                );
+                assert_eq!(compatible.len(), expected, "facade {identifier}");
             }
         }
 

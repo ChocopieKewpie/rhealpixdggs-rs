@@ -39,6 +39,7 @@ boundary, antimeridian, polar, traversal, coverage, and facade fixtures. See
 - [x] Release the Python GIL around bulk operations
 - [x] Optional Rayon parallelism above measured operation-specific crossover sizes
 - [x] Batch cell-to-boundary and region-cover operations
+- [x] Shared-edge projection deduplication for dense boundary batches
 - [x] Reproducible New Zealand polygon → GeoPackage comparison harness
 - [x] Record the 0.8.0 versus 0.6.0 New Zealand result on Windows
 - [ ] Benchmark memory, latency, and throughput on all target operating systems
@@ -67,10 +68,19 @@ single-point and bulk measurements.
 
 - [x] Add `grid_disk` and `grid_ring` traversal across face boundaries
 - [x] Add a same-resolution edge-neighbour predicate
+- [x] Add OGC-style cell relations, including mixed-resolution edge/corner contact
 - [ ] Add distance and path operations
 - [ ] Freeze and document the cross-language `u64` bit/range contract
 - [ ] Publish language-neutral identifier and topology test vectors
 - [ ] Decide whether 1.0 remains fixed to aperture 9
+
+## M3.1 — Upstream v0.7.0 review follow-ups
+
+- [x] Audit all 20 open upstream milestone issues for Rust applicability
+- [x] Correct ellipsoidal quad centroid latitude
+- [x] Correct quad/cap boundary density and inset handling
+- [x] Cover strongly flattened custom ellipsoids with a direct authalic path
+- [x] Document resolved, non-applicable, and deliberately scoped issues
 
 ## M4 — Additional language bindings
 

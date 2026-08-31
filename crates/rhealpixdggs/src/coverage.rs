@@ -282,20 +282,38 @@ impl RhealpixDggs {
         Ok(if compact { compact_cells(cells) } else { cells })
     }
 
-    /// Return the upstream-compatible ellipsoidal centroid of a cell.
+    /// Return the equal-area ellipsoidal centroid of a cell.
     ///
     /// Polar darts and skew quadrilaterals use fixed Gauss-Legendre
     /// integration over the projected cell square, avoiding a runtime
     /// dependency on SciPy.
     pub fn cell_centroid_lonlat(&self, cell: &CellId) -> Result<Point> {
         let nucleus = self.cell_to_lonlat(cell)?;
-        let vertices = self.cell_vertices_lonlat(cell, false)?;
         match cell.shape() {
             CellShape::Cap => Ok(nucleus),
-            CellShape::Quad => Ok((
-                nucleus.0,
-                vertices.iter().map(|point| point.1).sum::<f64>() / 4.0,
-            )),
+            CellShape::Quad => {
+                // Longitude is affine in projected x for an equatorial quad,
+                // but latitude is nonlinear in projected y. Integrate the
+                // inverse projection instead of averaging edge latitudes.
+                let planar = self.cell_vertices_projected(cell)?;
+                let x_mid = (planar[0].0 + planar[2].0) / 2.0;
+                let y_mid = (planar[0].1 + planar[2].1) / 2.0;
+                let half_width = (planar[2].0 - planar[0].0) / 2.0;
+                let mut latitude = 0.0;
+                for (node, weight) in GAUSS_NODES.into_iter().zip(GAUSS_WEIGHTS) {
+                    latitude += weight / 2.0
+                        * projection::inverse_in_region(
+                            self.ellipsoid(),
+                            x_mid,
+                            y_mid + half_width * node,
+                            self.north_square(),
+                            self.south_square(),
+                            projection::Region::Equatorial,
+                        )?
+                        .1;
+                }
+                Ok((nucleus.0, latitude))
+            }
             CellShape::Dart | CellShape::SkewQuad => {
                 let planar = self.cell_vertices_projected(cell)?;
                 let x_mid = (planar[0].0 + planar[2].0) / 2.0;
@@ -1120,6 +1138,22 @@ mod tests {
                 cell,
                 "{identifier} {centroid:?}"
             );
+        }
+    }
+
+    #[test]
+    fn equatorial_quad_centroid_integrates_latitude_instead_of_edge_midpoint() {
+        let dggs = RhealpixDggs::wgs84_003();
+        for (identifier, expected_latitude) in
+            [("Q7", -26.790_327), ("O0", 26.790_327), ("P31", 8.565_250)]
+        {
+            let cell: CellId = identifier.parse().unwrap();
+            let centroid = dggs.cell_centroid_lonlat(&cell).unwrap();
+            assert!(
+                (centroid.1 - expected_latitude).abs() < 1.0e-6,
+                "{identifier}: {centroid:?}"
+            );
+            assert_eq!(centroid.0, dggs.cell_to_lonlat(&cell).unwrap().0);
         }
     }
 }
