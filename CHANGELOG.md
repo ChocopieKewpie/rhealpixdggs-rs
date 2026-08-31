@@ -8,8 +8,9 @@
   `coverage_mode="intersects"` / `--coverage-mode intersects` options.
 - Added regression coverage for tiny polygons, closed edge contact, holes,
   antimeridian handling, polar caps, compaction, and orientation stability.
-- Reorganised the README around five reproducible diagrams covering projection,
-  hierarchy, polar shapes, topology, stable IDs, and traversal.
+- Reorganised the README around eight reproducible diagrams covering the actual
+  projected grid, geographic cell footprints, hierarchy, polar shapes,
+  GIS-style seam traversal, stable IDs, and topology.
 
 ## 0.10.0 (2026-08-31)
 

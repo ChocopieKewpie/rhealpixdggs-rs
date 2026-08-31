@@ -6,6 +6,13 @@ equal-area faces and recursively subdivides every cell into a 3×3 grid: an
 aperture-9 hierarchy that remains traversable across projection seams, polar
 folds, and the antimeridian.
 
+![Actual rHEALPix cells in projected metres](docs/images/projected-grid.svg)
+
+This is the implemented WGS84 rHEALPix plane rather than an illustrative grid:
+every outline is generated from `Cell.boundary(plane=True)`. The top panels show
+the complete grid at resolutions 0 and 1; the lower panel shows real
+resolution-2 cells inside face `Q`, with `Q38` and its child `Q381` highlighted.
+
 ![The six rHEALPix faces and aperture-9 hierarchy](docs/images/projection-hierarchy.svg)
 
 The dependency-light Rust core owns projection, identifiers, hierarchy,
@@ -24,11 +31,24 @@ implementation: quads, caps, darts, and skew quads.
 
 ![Quad, cap, dart and skew-quad geographic cells](docs/images/cell-shapes.svg)
 
+The same cells can be rendered as ordinary EPSG:4326-style longitude/latitude
+geometry. This view uses densified boundaries from the library, splits wrapped
+edges at ±180°, and shows how the polar faces converge around the poles:
+
+![Actual rHEALPix cells in geographic coordinates](docs/images/geographic-faces.svg)
+
 Cells that look separated in the unfolded projection can share an edge on the
 globe. Neighbour traversal follows this topology, including face rotations at
 the poles and direct adjacency across ±180° longitude.
 
 ![Topology across face seams, the poles and antimeridian](docs/images/topology-seams.svg)
+
+The corresponding GIS view below uses actual geographic cell polygons,
+ellipsoidal centroids, and neighbours returned by the implementation. The
+arrows traverse an equatorial face seam, the antimeridian, and an
+equatorial-to-polar seam where a quadrilateral enters a dart cell.
+
+![Actual cells traversed across rHEALPix seams](docs/images/edge-traversal-gis.svg)
 
 ## Stable cell IDs
 

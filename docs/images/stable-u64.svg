@@ -6,6 +6,9 @@
   .panel { fill:#f7f9fc; stroke:#c8d2e2; } .grid { stroke:#93a4bd; }
   .blue { fill:#4c78a8; } .teal { fill:#2a9d8f; } .gold { fill:#e9c46a; }
   .coral { fill:#e76f51; } .violet { fill:#7c6bb2; }
+  .stroke-blue { stroke:#4c78a8; } .stroke-teal { stroke:#2a9d8f; }
+  .stroke-gold { stroke:#c99a27; } .stroke-coral { stroke:#e76f51; }
+  .stroke-violet { stroke:#7c6bb2; }
   text { font-family:Inter,Segoe UI,Arial,sans-serif; }
   @media (prefers-color-scheme: dark) {
     .ink { fill:#e6edf3; } .muted { fill:#a8b3c5; } .line { stroke:#c4cedd; }

@@ -32,7 +32,7 @@ PyO3's Python 3.9 stable ABI.
 
 ## README figures
 
-The five SVG figures in `docs/images/` are deterministic outputs of the public
+The eight SVG figures in `docs/images/` are deterministic outputs of the public
 Python API plus a small dependency-free SVG renderer:
 
 ```bash
