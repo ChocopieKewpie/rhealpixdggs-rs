@@ -21,6 +21,12 @@ def polygon_to_cells(
     holes: Sequence[Sequence[tuple[float, float]]] | None = None,
     compact: bool = False,
 ) -> list[str]: ...
+def polygon_to_cells_intersects(
+    exterior: Sequence[tuple[float, float]],
+    resolution: int,
+    holes: Sequence[Sequence[tuple[float, float]]] | None = None,
+    compact: bool = False,
+) -> list[str]: ...
 def cell_to_boundary(
     cell: str, trim_dart: bool = False
 ) -> list[tuple[float, float]]: ...

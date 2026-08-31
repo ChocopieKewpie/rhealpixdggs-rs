@@ -64,12 +64,14 @@ polar-face rotations and antimeridian adjacency.
 ## Geometry coverage
 
 Coverage accepts ordinary coordinate slices rather than GEOS, Shapely, or
-`geo` objects. Rectangle scans preserve upstream row ordering. Polyline cover
-returns every touched cell in path order, and polygon cover uses strict cell-
-centroid containment with optional holes and recursive compaction. Geographic
-longitudes are unwrapped internally, so antimeridian-crossing lines and rings
-take the short path. Polar caps are tested as latitude-bounded regions instead
-of being forced into invalid longitude polygons.
+`geo` objects. Rectangle scans preserve upstream row ordering and polyline
+cover returns every touched cell in path order. Polygon coverage offers two
+explicit rules: strict cell-centroid containment for upstream compatibility,
+and closed polygon/cell intersection where interior, edge, and corner contact
+all count. Both support holes and recursive compaction. Geographic longitudes
+are unwrapped internally, so antimeridian-crossing lines and rings take the
+short path. Polar caps are tested as latitude-bounded regions instead of being
+forced into invalid longitude polygons.
 
 This boundary keeps the core reusable from any language. Bindings can add
 GeoJSON, Shapely, or ecosystem-specific adapters without making those object

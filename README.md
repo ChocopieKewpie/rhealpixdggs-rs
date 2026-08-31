@@ -1,40 +1,62 @@
 # rhealpixdggs-rs
 
-A Rust-first implementation of the aperture-9 rHEALPix Discrete Global Grid
-System, with Python as the first supported language binding.
+A fast, Rust-first implementation of the **rHEALPix Discrete Global Grid
+System**, with an H3-like Python API. rHEALPix divides the globe into six
+equal-area faces and recursively subdivides every cell into a 3×3 grid: an
+aperture-9 hierarchy that remains traversable across projection seams, polar
+folds, and the antimeridian.
 
-> **Status: pre-1.0; version 0.10.0 includes completed M1 semantic parity, the
-> M2 bulk API, robust small-polygon validation, deterministic grid-disk/ring
-> topology, OGC cell predicates, corrected centroids and boundaries, and
-> optional GeoPackage polygon conversion.** Point indexing,
-> projection, shape-aware vertices,
-> exact densified boundaries, planar and ellipsoidal neighbours, hierarchy
-> traversal and ordering, equal-area metrics, stable integer IDs, dependency-
-> free rectangle/line/polygon coverage, and the deterministic `WGS84_003`
-> upstream object facade are implemented. Custom ellipsoids, alternate
-> apertures, random sampling, and visualization helpers are not yet drop-in
-> compatible with
-> [`rhealpixdggs-py`](https://github.com/manaakiwhenua/rhealpixdggs-py).
+![The six rHEALPix faces and aperture-9 hierarchy](docs/images/projection-hierarchy.svg)
 
-## Why this layout
+The dependency-light Rust core owns projection, identifiers, hierarchy,
+topology, coverage, and metrics. PyO3 exposes the same algorithms to Python;
+NumPy and optional GeoPackage adapters handle practical vector workflows.
 
-The repository has one dependency-free Rust core and thin language bindings:
+## The grid in one minute
+
+The six root cells are `N`, `O`, `P`, `Q`, `R`, and `S`. A child digit from
+`0` to `8` selects one square in the parent's row-major 3×3 subdivision. Thus
+`Q381` is the path `Q → Q3 → Q38 → Q381`, at resolution 3.
+
+The planar grid is square, but inverse projection folds the two polar faces
+onto the ellipsoid. That produces four geographic shape classes in the current
+implementation: quads, caps, darts, and skew quads.
+
+![Quad, cap, dart and skew-quad geographic cells](docs/images/cell-shapes.svg)
+
+Cells that look separated in the unfolded projection can share an edge on the
+globe. Neighbour traversal follows this topology, including face rotations at
+the poles and direct adjacency across ±180° longitude.
+
+![Topology across face seams, the poles and antimeridian](docs/images/topology-seams.svg)
+
+## Stable cell IDs
+
+Human-readable identifiers convert losslessly to and from a deterministic
+`u64`. The integer is **resolution-major**, not an H3-style packed bitfield:
 
 ```text
-crates/rhealpixdggs/   Rust projection and indexing core
-bindings/python/       PyO3 extension module
-python/rhealpixdggs/   Python package and type information
-tests/python/          Python API and upstream golden tests
-tests/fixtures/        Versioned cross-language conformance corpora
-benchmarks/data/       Reproducible non-authoritative benchmark fixtures
-tools/                 Deterministic corpus and development utilities
+id = resolution_offset(r) + face_number × 9ʳ + base9(child_digits)
+resolution_offset(r) = 6 × (9ʳ − 1) / 8     for r > 0
 ```
 
-That avoids reimplementing rHEALPix independently in each language. The cell
-ID string (`R88446545`) and stable `u64` representation form the shared
-interchange contract for future C, JavaScript/Wasm, Java, and R bindings.
+Faces map as `N=0`, `O=1`, `P=2`, `Q=3`, `R=4`, and `S=5`. For example,
+`Q381 ↔ 3049`. Resolutions 0 through 15 currently fit within 51 bits, while
+`u64` remains the stable public representation. Post-order traversal is a
+separate ordering and must not be confused with this interchange ID.
+
+![How Q381 maps to stable integer 3049](docs/images/stable-u64.svg)
+
+Parent/child functions operate on the identifier tree. `grid_disk` and
+`grid_ring` instead walk the four edge-neighbour graph, so they continue across
+the seams shown above.
+
+![Parent-child hierarchy and grid-ring traversal](docs/images/grid-traversal.svg)
 
 ## Python quick start
+
+For development, Conda keeps Rust, Maturin, PROJ, GDAL, and their Python
+bindings in one compatible environment:
 
 ```bash
 conda env create -f environment-dev.yml
@@ -43,12 +65,9 @@ maturin develop --release
 pytest
 ```
 
-The development environment installs Python, Rust/Cargo, Maturin, and the
-geospatial benchmark stack from `conda-forge`. Keeping PROJ, PyProj, GDAL,
-Pyogrio, and GeoPandas in the same Conda environment avoids incompatible
-native libraries. On Windows, first install the Visual Studio Build Tools
-**Desktop development with C++** workload (MSVC x64/x86 and a Windows SDK);
-VS Code alone does not provide `link.exe`.
+On Windows, install Visual Studio Build Tools with **Desktop development with
+C++** (MSVC x64/x86 plus a Windows SDK); VS Code alone does not provide
+`link.exe`.
 
 ```python
 import rhealpixdggs as rh
@@ -57,42 +76,44 @@ cell = rh.latlng_to_cell(-40.356, 175.611, 12)
 assert cell == "R887560473610"
 
 lat, lng = rh.cell_to_latlng(cell)
-boundary = rh.cell_to_boundary(cell)
-dense_boundary = rh.cell_to_boundary_densified(cell, points_per_edge=16)
-assert len(dense_boundary) == 60  # exactly 4 * 16 - 4
-children = rh.cell_to_children(cell)
-neighbors = rh.cell_to_neighbors(cell)
-geographic_neighbors = rh.cell_to_neighbors(cell, plane=False)
-nearby = rh.grid_disk(cell, 2)
-second_ring = rh.grid_ring(cell, 2)
-assert all(rh.are_neighbor_cells(cell, value) for value in rh.grid_ring(cell, 1))
-assert rh.cell_contains(rh.cell_to_parent(cell), cell)
-
-boundaries = rh.cells_to_boundaries(
-    [cell, next(iter(neighbors.values()))], points_per_edge=16
-)
-
-line_cells = rh.line_to_cells([(-40.356, 175.611), (-40.35, 175.62)], 12)
-polygon_cells = rh.polygon_to_cells(
-    [(-40.36, 175.60), (-40.34, 175.60), (-40.34, 175.63), (-40.36, 175.63)],
-    12,
-    compact=True,
-)
+boundary = rh.cell_to_boundary_densified(cell, points_per_edge=16)
+parent = rh.cell_to_parent(cell)
+children = rh.cell_to_children(parent)
+neighbors = rh.cell_to_neighbors(cell, plane=False)
+ring = rh.grid_ring(cell, 2)
 
 integer_id = rh.str_to_int(cell)
 assert rh.int_to_str(integer_id) == cell
-
-post_index = rh.cell_to_post_order_index(cell)
-assert rh.post_order_index_to_cell(post_index) == cell
-next_cell = rh.cell_to_successor(cell)
 ```
 
-The Python API follows H3's coordinate convention: functions accept and return
-`(latitude, longitude)`. The Rust core uses `(longitude, latitude)`.
+The H3-like Python functions use `(latitude, longitude)`. The Rust core and the
+upstream-compatible `RHEALPixDGGS`/`Cell` facade use conventional
+`(longitude, latitude)` coordinates.
 
-Large workloads can use one extension call per contiguous NumPy batch. Integer
-cell IDs avoid constructing a Python string for every point; returned arrays
-are read-only zero-copy views over the extension's immutable result bytes:
+### Polygon coverage
+
+Centroid coverage preserves the historical `rhealpixdggs-py` polyfill rule.
+Intersection coverage selects every cell whose closed geometry touches the
+polygon, including edge-only and corner-only contact:
+
+```python
+polygon = [
+    (-40.36, 175.60),
+    (-40.34, 175.60),
+    (-40.34, 175.63),
+    (-40.36, 175.63),
+]
+
+centroid_cells = rh.polygon_to_cells(polygon, 12)
+touching_cells = rh.polygon_to_cells_intersects(polygon, 12)
+assert set(centroid_cells) <= set(touching_cells)
+```
+
+Both modes support holes, antimeridian-crossing polygons, polar cells, and
+recursive compaction. Tiny valid slivers are accepted using scale-relative,
+numerically robust ring validation.
+
+### NumPy and GeoPackage workflows
 
 ```python
 import numpy as np
@@ -100,91 +121,27 @@ from rhealpixdggs import numpy as rhnp
 
 points = np.array([[-40.356, 175.611], [37.7749, -122.4194]])
 cells = rhnp.latlngs_to_cells(points, 12)
-nuclei = rhnp.cells_to_latlngs(cells)
 boundaries = rhnp.cells_to_boundaries(cells, points_per_edge=16)
-
-# Ragged batch output uses CSR-style offsets.
-covered, offsets = rhnp.bboxes_to_cells(
-    [[-40.0, -42.0, 176.0, 173.0], [11.0, 9.0, -178.0, 178.0]], 8
-)
-second_box = covered[offsets[1] : offsets[2]]
 ```
 
-Bulk computation releases the GIL. `parallel=None` automatically enables
-Rayon above benchmarked crossover sizes; pass `parallel=True` or `False` to
-override that policy.
-
-Install the optional geospatial adapter to convert Polygon/MultiPolygon vector
-data directly to an EPSG:4326 GeoPackage:
+Bulk calls release the GIL and can use Rayon. Install the `geo` extra to cover
+Polygon/MultiPolygon input and write antimeridian-safe EPSG:4326 GeoPackages:
 
 ```bash
 python -m pip install -e '.[geo]'
-rhealpix-to-gpkg nz-boundary.gpkg nz-rhealpix.gpkg --resolution 6
+rhealpix-to-gpkg nz.gpkg nz-cells.gpkg -r 6 --coverage-mode intersects
 ```
 
 ```python
 from rhealpixdggs.geo import polygon_file_to_geopackage
 
-cells = polygon_file_to_geopackage(
-    "nz-boundary.gpkg",
-    "nz-rhealpix.gpkg",
+frame = polygon_file_to_geopackage(
+    "nz.gpkg",
+    "nz-cells.gpkg",
     resolution=6,
-)
-print(f"wrote {len(cells):,} cells")
-```
-
-Inputs may use any declared CRS; they are reprojected to WGS84 and dissolved
-before coverage. Output cells include `cell_id`, `resolution`, `area_m2`, and
-antimeridian-safe MultiPolygon geometry. Existing outputs are protected unless
-the caller explicitly passes `overwrite=True` or `--overwrite`.
-
-Existing `rhealpixdggs-py` code can start migrating through the object facade,
-which retains the upstream `(longitude, latitude)` convention:
-
-```python
-from rhealpixdggs import WGS84_003
-
-cell = WGS84_003.cell(("N", 6, 2))
-assert cell.ellipsoidal_shape == "dart"
-assert str(cell.neighbor("up")) == "N38"
-vertices = cell.vertices(plane=False, trim_dart=True)
-boundary = cell.boundary(n=16, plane=False)
-assert WGS84_003.cell(post_order_index=cell.index("post")) == cell
-next_cell = cell.successor()
-region = WGS84_003.cells_from_region(
-    3, (170.0, -35.0), (176.0, -42.0), plane=False
+    coverage_mode="intersects",
 )
 ```
-
-The facade supports aperture 9 on WGS84, configurable polar-square positions,
-projection helpers, point and region indexing, nuclei and centroids, vertices,
-planar and ellipsoidal neighbours, boundaries and interiors, predicates,
-ordering and traversal, hierarchy expansion, meridian/parallel/line/region
-coverage, and cell metrics. See
-[`docs/UPSTREAM_COMPATIBILITY.md`](docs/UPSTREAM_COMPATIBILITY.md) for the exact
-M1 boundary and deliberate exclusions.
-
-`cell_to_boundary_densified`, `cells_to_boundaries`, and `Cell.boundary()` have
-one exact contract for every shape: `points_per_edge >= 2` and
-`4 * points_per_edge - 4` returned points, ordered clockwise from geographic
-northwest. This intentionally fixes the upstream 0.6.0 quad/cap shortcut that
-silently ignored both boundary density and the `interior` flag. Dense bulk
-sets reuse each shared edge in reverse, so adjacent copies are byte-identical.
-
-## Initial performance
-
-On the development benchmark machine, a warmed Python point-to-cell call took
-0.485 µs here versus 20.285 µs in `rhealpixdggs-py` 0.6.0—about **41.8× faster**
-for that specific single-point operation. Rust-core point indexing measured
-about 170 ns. See [BENCHMARKS.md](BENCHMARKS.md) for the setup and important
-limits of this early comparison, including the recorded Windows M2 run and the
-reproducible New Zealand polygon workload.
-
-On the matched Windows New Zealand workload, both implementations selected the
-same 1,859 resolution-6 cells. Rust 0.8.0 completed polygon coverage in
-14.582 ms versus 72.535 s upstream (**4,974× faster**) and the full GeoPackage
-pipeline in 99.991 ms versus 72.414 s (**724× faster**). These values are one
-measured sample after warm-up because repeated legacy runs were impractical.
 
 ## Rust quick start
 
@@ -195,93 +152,41 @@ let dggs = RhealpixDggs::wgs84_003();
 let cell = dggs.cell_from_lonlat(175.611, -40.356, 12)?;
 assert_eq!(cell.to_string(), "R887560473610");
 
-let (longitude, latitude) = dggs.cell_to_lonlat(&cell)?;
+let touching = dggs.cells_from_polygon_lonlat_intersects(
+    8,
+    &[(175.0, -40.0), (175.1, -40.0), (175.1, -39.9)],
+    &[],
+    false,
+)?;
 # Ok::<(), rhealpixdggs::Error>(())
 ```
 
-## Implemented API
+## Performance
 
-| Capability | Rust | Python | Upstream parity |
-|---|---:|---:|---:|
-| WGS84_003 point → cell | Yes | Yes | Golden-tested |
-| NumPy point/cell conversion | Ordered bulk | Yes | Scalar-equivalent |
-| Batch boundaries and bounding boxes | Shared-edge ordered bulk | Yes | Scalar-equivalent; shared edges byte-identical |
-| Cell → projected/geographic nucleus | Yes | Yes | Golden-tested |
-| Ellipsoidal cell centroid | Yes | Yes | Corrected mean-latitude quadrature |
-| Shape classification and geographic vertices | Yes | Yes | Golden-tested, including dart trimming |
-| Exact densified projected/geographic boundaries | Yes | Yes | Differential-tested across shapes and polar layouts |
-| Planar edge neighbours | Yes | Yes | Golden-tested, including polar rotations |
-| Ellipsoidal edge neighbours | Yes | Yes | Exhaustively differential-tested through resolution 3 |
-| Grid disk/ring and edge-neighbour predicate | Yes | Yes | Seam- and polar-layout-tested |
-| OGC cell predicates | Yes | Yes | Hierarchy, edge/corner contact, and cube seams tested |
-| Parent, children, descendants | Yes | Yes | Yes |
-| Post-order comparison and predecessor/successor traversal | Yes | Yes | Exhaustively differential-tested through resolution 3 |
-| Level/post-order index ↔ cell | Yes | Yes | Differential-tested; two upstream defects corrected |
-| Recursive compact/uncompact | Yes | Yes | Yes |
-| String ↔ stable level-order `u64` | Yes | Yes | New API |
-| Equal-area cell metric | Yes | Yes | Golden-tested |
-| Versioned upstream conformance corpus | Yes | Yes | 1,583 shared cases from upstream 0.6.0 |
-| Rectangle, polyline, and polygon coverage | Yes | Yes | Shared upstream corpus plus antimeridian corrections |
-| Polygon vector input → GeoPackage cells | Core coverage | Optional `geo` extra | Same centroid-selection contract; benchmarked separately |
-| `RHEALPixDGGS` / `Cell` deterministic object facade | Core-backed | Yes | M1 complete for documented WGS84_003 boundary |
-| Custom aperture / `N_side` | Planned decision | — | No |
+Recorded benchmarks include a roughly 41.8× warmed single-point Python speedup
+and a matched Windows New Zealand resolution-6 coverage run that selected the
+same 1,859 centroid cells while completing the Rust coverage phase about
+4,974× faster than `rhealpixdggs-py` 0.6.0. These are workload-specific
+measurements, not universal claims; see [BENCHMARKS.md](BENCHMARKS.md) for the
+hardware, commands, raw results, and limitations.
 
-See [ROADMAP.md](ROADMAP.md) for the compatibility and performance sequence.
-The disposition of every open upstream `v0.7.0` issue is recorded in
-[`docs/UPSTREAM_V0_7_AUDIT.md`](docs/UPSTREAM_V0_7_AUDIT.md).
+## Documentation
 
-## Development checks
+- [API and implementation status](docs/API_STATUS.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Development and figure regeneration](docs/DEVELOPMENT.md)
+- [Numerical accuracy](docs/NUMERICAL_ACCURACY.md)
+- [Upstream compatibility](docs/UPSTREAM_COMPATIBILITY.md)
+- [Upstream v0.7 issue audit](docs/UPSTREAM_V0_7_AUDIT.md)
+- [Roadmap](ROADMAP.md)
 
-```bash
-cargo fmt --all --check
-cargo clippy --workspace --all-targets
-cargo test -p rhealpixdggs
-cargo check -p rhealpixdggs-python
-python tools/generate_upstream_coverage_corpus.py \
-  --upstream-root ../upstream-src --check
-python tools/generate_upstream_facade_corpus.py \
-  --upstream-root ../upstream-src --check
-maturin develop --release
-pytest
-cargo bench -p rhealpixdggs
-python tools/benchmark_nz_polygon.py --help
-```
-
-The Rust compiler is pinned in `rust-toolchain.toml`. The Python wheel uses
-PyO3's Python 3.9 stable ABI so one wheel can serve multiple CPython versions
-on each platform.
-
-## Compatibility policy
-
-The completed M1 target is numerical and identifier parity with the upstream
-`WGS84_003` configuration. Upstream 0.6.0 outputs are committed as a versioned,
-language-neutral conformance corpus consumed by both the Rust core and Python
-binding. The base corpus covers all 16 polar-square layouts, 1,344
-point-indexing cases, 208 geometry cases, traversal and ordering, and metrics
-through resolution 15; versioned coverage and facade corpora extend it. See
-[`tests/fixtures/rhealpixdggs-py-0.6.0`](tests/fixtures/rhealpixdggs-py-0.6.0)
-for its provenance, schema, checksum, and deterministic regeneration command.
-New algorithms should be benchmarked against both the Rust implementation and
-the released Python package; speed changes must not silently change cell IDs.
-
-The Python surface is intentionally H3-like for new code. The separate
-`RHEALPixDGGS` and `Cell` facade preserves upstream coordinate ordering for the
-documented deterministic M1 surface.
-
-Known upstream defects are corrected rather than reproduced: resolution-zero
-level indices are `0..=5` and round-trip correctly, and successor traversal
-past terminal cell `S` returns `None` at finer resolutions instead of raising
-an internal `AttributeError`. Quad/cap boundaries honour density and inset
-arguments, and quad centroids use their true equal-area mean latitude. Coverage
-also unwraps antimeridian-crossing lines and polygons and explicitly handles
-polar cap cells, both known limitations in the upstream line implementation.
+Version 0.10.1 is pre-1.0. The WGS84 aperture-9 surface is extensively tested
+against versioned upstream corpora; custom apertures and complete drop-in
+compatibility are not yet promised.
 
 ## Licence and attribution
 
-MIT. The Rust implementation is maintained by James Ardo and contributors.
-Projection and indexing mathematics were ported from
-`manaakiwhenua/rhealpixdggs-py` under its MIT licence option. See
-[LICENSE](LICENSE), [NOTICE](NOTICE), and
-[`docs/NUMERICAL_ACCURACY.md`](docs/NUMERICAL_ACCURACY.md). The optimized
-authalic-latitude series follows the method evaluated by Gilić and Gašparović
-(2025), DOI [10.1109/JSTARS.2025.3567839](https://doi.org/10.1109/JSTARS.2025.3567839).
+MIT. Maintained by James Ardo and contributors. Projection and indexing
+mathematics were ported from
+[`manaakiwhenua/rhealpixdggs-py`](https://github.com/manaakiwhenua/rhealpixdggs-py)
+under its MIT licence option. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

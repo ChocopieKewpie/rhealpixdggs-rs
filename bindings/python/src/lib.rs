@@ -323,6 +323,33 @@ fn polygon_to_cells(
         .map_err(value_error)
 }
 
+/// Return every cell whose closed boundary intersects a latitude/longitude polygon.
+#[pyfunction(signature = (exterior, resolution, holes=None, compact=false))]
+fn polygon_to_cells_intersects(
+    exterior: Vec<(f64, f64)>,
+    resolution: u8,
+    holes: Option<Vec<Vec<(f64, f64)>>>,
+    compact: bool,
+) -> PyResult<Vec<String>> {
+    let exterior: Vec<_> = exterior
+        .into_iter()
+        .map(|(latitude, longitude)| (longitude, latitude))
+        .collect();
+    let holes: Vec<Vec<_>> = holes
+        .unwrap_or_default()
+        .into_iter()
+        .map(|ring| {
+            ring.into_iter()
+                .map(|(latitude, longitude)| (longitude, latitude))
+                .collect()
+        })
+        .collect();
+    RhealpixDggs::wgs84_003()
+        .cells_from_polygon_lonlat_intersects(resolution, &exterior, &holes, compact)
+        .map(|cells| cells.into_iter().map(|cell| cell.to_string()).collect())
+        .map_err(value_error)
+}
+
 /// Return boundary points as `(latitude, longitude)` degrees.
 #[pyfunction(signature = (cell, trim_dart=false))]
 fn cell_to_boundary(cell: &str, trim_dart: bool) -> PyResult<Vec<(f64, f64)>> {
@@ -1108,6 +1135,7 @@ fn _rhealpixdggs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(bbox_to_cells, module)?)?;
     module.add_function(wrap_pyfunction!(line_to_cells, module)?)?;
     module.add_function(wrap_pyfunction!(polygon_to_cells, module)?)?;
+    module.add_function(wrap_pyfunction!(polygon_to_cells_intersects, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_boundary, module)?)?;
     module.add_function(wrap_pyfunction!(cell_to_boundary_densified, module)?)?;
     module.add_function(wrap_pyfunction!(cells_to_boundaries, module)?)?;

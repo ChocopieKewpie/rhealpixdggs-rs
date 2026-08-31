@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="490" viewBox="0 0 1180 490" role="img" aria-labelledby="title">
+<title id="title">Stable rHEALPix u64 encoding</title>
+<style>
+  :root { color-scheme: light dark; }
+  .ink { fill:#172033; } .muted { fill:#526079; } .line { stroke:#27364f; }
+  .panel { fill:#f7f9fc; stroke:#c8d2e2; } .grid { stroke:#93a4bd; }
+  .blue { fill:#4c78a8; } .teal { fill:#2a9d8f; } .gold { fill:#e9c46a; }
+  .coral { fill:#e76f51; } .violet { fill:#7c6bb2; }
+  text { font-family:Inter,Segoe UI,Arial,sans-serif; }
+  @media (prefers-color-scheme: dark) {
+    .ink { fill:#e6edf3; } .muted { fill:#a8b3c5; } .line { stroke:#c4cedd; }
+    .panel { fill:#161b22; stroke:#445168; } .grid { stroke:#66758c; }
+  }
+</style>
+<text x="590.0" y="38.0" class="ink" text-anchor="middle" font-size="25" font-weight="700">Canonical cell string ↔ stable u64</text>
+<rect x="35.0" y="78.0" width="1110.0" height="128.0" rx="12.0" class="panel"/>
+<text x="90.0" y="120.0" class="ink" text-anchor="start" font-size="29" font-weight="700">Q381</text>
+<text x="245.0" y="115.0" class="muted" text-anchor="middle" font-size="13" font-weight="500">resolution block</text>
+<text x="245.0" y="145.0" class="ink" text-anchor="middle" font-size="18" font-weight="500">offset(3) = 546</text>
+<text x="485.0" y="115.0" class="muted" text-anchor="middle" font-size="13" font-weight="500">face</text>
+<text x="485.0" y="145.0" class="ink" text-anchor="middle" font-size="18" font-weight="500">Q = 3</text>
+<text x="670.0" y="115.0" class="muted" text-anchor="middle" font-size="13" font-weight="500">base-9 digits</text>
+<text x="670.0" y="145.0" class="ink" text-anchor="middle" font-size="18" font-weight="500">381₉ = 316</text>
+<text x="930.0" y="115.0" class="muted" text-anchor="middle" font-size="13" font-weight="500">result</text>
+<text x="930.0" y="150.0" class="teal" text-anchor="middle" font-size="27" font-weight="700">3049</text>
+<text x="590.0" y="245.0" class="ink" text-anchor="middle" font-size="21" font-weight="700">id = offset(r) + face × 9ʳ + base9(digits)</text>
+<text x="590.0" y="278.0" class="muted" text-anchor="middle" font-size="18" font-weight="500">offset(r) = 6 × (9ʳ − 1) / 8</text>
+<rect x="35.0" y="315.0" width="535.0" height="145.0" rx="12.0" class="panel"/>
+<text x="65.0" y="350.0" class="ink" text-anchor="start" font-size="16" font-weight="700">Face numbers</text>
+<text x="65.0" y="385.0" class="ink" text-anchor="start" font-size="17" font-weight="500">N=0   O=1   P=2   Q=3   R=4   S=5</text>
+<text x="65.0" y="425.0" class="muted" text-anchor="start" font-size="14" font-weight="500">Resolution-major, not a packed bitfield</text>
+<rect x="610.0" y="315.0" width="535.0" height="145.0" rx="12.0" class="panel"/>
+<text x="640.0" y="350.0" class="ink" text-anchor="start" font-size="16" font-weight="700">Current range</text>
+<text x="640.0" y="385.0" class="ink" text-anchor="start" font-size="17" font-weight="500">resolutions 0…15 use at most 51 bits</text>
+<text x="640.0" y="425.0" class="muted" text-anchor="start" font-size="14" font-weight="500">post-order is separate (Q381 → 795,604,004,266,974)</text>
+</svg>

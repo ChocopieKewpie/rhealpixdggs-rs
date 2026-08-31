@@ -45,6 +45,27 @@ def test_geometry_adapter_matches_coordinate_api() -> None:
     assert geo.geometry_to_cells(UNIT_SQUARE, 5) == expected
 
 
+def test_geometry_adapter_supports_intersection_coverage() -> None:
+    expected = rh.polygon_to_cells_intersects(
+        [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)],
+        5,
+    )
+    assert geo.geometry_to_cells(
+        UNIT_SQUARE, 5, coverage_mode="intersects"
+    ) == expected
+    with pytest.raises(ValueError, match="coverage_mode"):
+        geo.geometry_to_cells(UNIT_SQUARE, 5, coverage_mode="anything")
+
+
+def test_cli_accepts_intersection_coverage_mode() -> None:
+    from rhealpixdggs.cli import parser
+
+    arguments = parser().parse_args(
+        ["input.geojson", "output.gpkg", "-r", "6", "--coverage-mode", "intersects"]
+    )
+    assert arguments.coverage_mode == "intersects"
+
+
 def test_multipolygon_deduplicates_and_compacts_after_union() -> None:
     duplicated = MultiPolygon([UNIT_SQUARE, UNIT_SQUARE])
     assert geo.geometry_to_cells(duplicated, 6) == geo.geometry_to_cells(
@@ -103,7 +124,9 @@ def test_geopackage_round_trip_when_geo_extra_is_installed(tmp_path: Path) -> No
         / "new-zealand-simplified.geojson"
     )
     output = tmp_path / "new-zealand-rhealpix.gpkg"
-    frame = geo.polygon_file_to_geopackage(source, output, 4)
+    frame = geo.polygon_file_to_geopackage(
+        source, output, 4, coverage_mode="intersects"
+    )
 
     assert output.exists()
     assert not frame.empty
@@ -111,3 +134,7 @@ def test_geopackage_round_trip_when_geo_extra_is_installed(tmp_path: Path) -> No
     assert set(frame.geometry.geom_type) == {"MultiPolygon"}
     restored = geopandas.read_file(output, layer="rhealpix_cells")
     assert restored["cell_id"].tolist() == frame["cell_id"].tolist()
+    centroid = geo.polygon_file_to_geopackage(
+        source, tmp_path / "new-zealand-centroid.gpkg", 4
+    )
+    assert set(centroid["cell_id"]) <= set(frame["cell_id"])

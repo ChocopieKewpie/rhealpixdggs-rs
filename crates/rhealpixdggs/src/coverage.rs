@@ -244,6 +244,37 @@ impl RhealpixDggs {
         Ok(if compact { compact_cells(cells) } else { cells })
     }
 
+    /// Return every projected cell whose closed boundary intersects a polygon.
+    ///
+    /// Unlike [`Self::cells_from_polygon_projected`], selection is not based on
+    /// the cell centroid: cells touched only along an edge or corner are also
+    /// returned. Rings contain `(x, y)` metres and need not repeat their first
+    /// point. Cells wholly inside a hole are excluded.
+    pub fn cells_from_polygon_projected_intersects(
+        &self,
+        resolution: u8,
+        exterior: &[Point],
+        holes: &[Vec<Point>],
+        compact: bool,
+    ) -> Result<Vec<CellId>> {
+        validate_polygon(exterior, holes, validate_projected_point, false)?;
+        let (x_min, x_max, y_min, y_max) = bounds(exterior);
+        let candidates = flatten_rows(self.cells_from_region_projected(
+            resolution,
+            (x_min, y_max),
+            (x_max, y_min),
+        )?);
+        let candidates = self.expand_planar_candidates(candidates)?;
+        let mut cells = Vec::new();
+        for cell in candidates {
+            let ring = self.cell_vertices_projected(&cell)?.to_vec();
+            if polygon_intersects_ring(exterior, holes, &ring) {
+                cells.push(cell);
+            }
+        }
+        Ok(if compact { compact_cells(cells) } else { cells })
+    }
+
     /// Fill a longitude/latitude polygon using cell-centroid containment.
     ///
     /// Rings contain `(longitude, latitude)` degrees. Antimeridian-crossing
@@ -276,6 +307,50 @@ impl RhealpixDggs {
             let (longitude, latitude) = self.cell_centroid_lonlat(&cell)?;
             let centroid = (longitude_near(longitude, anchor), latitude);
             if polygon_contains(centroid, &exterior, &holes) {
+                cells.push(cell);
+            }
+        }
+        Ok(if compact { compact_cells(cells) } else { cells })
+    }
+
+    /// Return every geographic cell whose closed boundary intersects a polygon.
+    ///
+    /// Rings contain `(longitude, latitude)` degrees and antimeridian-crossing
+    /// rings are unwrapped automatically. Edge and corner contact count as an
+    /// intersection. Cells wholly inside a hole are excluded.
+    pub fn cells_from_polygon_lonlat_intersects(
+        &self,
+        resolution: u8,
+        exterior: &[Point],
+        holes: &[Vec<Point>],
+        compact: bool,
+    ) -> Result<Vec<CellId>> {
+        validate_polygon(exterior, holes, validate_lonlat_point, true)?;
+        let exterior = unwrap_longitudes(exterior, None);
+        let anchor = longitude_anchor(&exterior);
+        let holes: Vec<_> = holes
+            .iter()
+            .map(|hole| unwrap_longitudes(hole, Some(anchor)))
+            .collect();
+        let (longitude_min, longitude_max, latitude_min, latitude_max) = bounds(&exterior);
+        let candidates = self.geographic_candidates(
+            resolution,
+            longitude_min,
+            longitude_max,
+            latitude_min,
+            latitude_max,
+        )?;
+        let candidates = self.expand_geographic_candidates(candidates)?;
+        let mut cells = Vec::new();
+        for cell in candidates {
+            let intersects = if cell.shape() == CellShape::Cap {
+                self.cap_intersects_polygon(&cell, &exterior, &holes, anchor)?
+            } else {
+                let boundary = self.cell_boundary_lonlat(&cell, 8, false)?;
+                let ring = unwrap_longitudes(&boundary, Some(anchor));
+                polygon_intersects_ring(&exterior, &holes, &ring)
+            };
+            if intersects {
                 cells.push(cell);
             }
         }
@@ -436,6 +511,76 @@ impl RhealpixDggs {
             }
         }
         Ok(candidates.into_iter().collect())
+    }
+
+    fn expand_planar_candidates(&self, candidates: Vec<CellId>) -> Result<Vec<CellId>> {
+        let mut expanded: BTreeSet<_> = candidates.iter().cloned().collect();
+        for cell in candidates {
+            for first in crate::Direction::ALL {
+                let neighbour = self.planar_neighbor(&cell, first);
+                expanded.insert(neighbour.clone());
+                for second in crate::Direction::ALL {
+                    expanded.insert(self.planar_neighbor(&neighbour, second));
+                }
+            }
+            if expanded.len() > MAX_COVERAGE_CELLS {
+                return Err(Error::ExpansionTooLarge(expanded.len() as u64));
+            }
+        }
+        Ok(expanded.into_iter().collect())
+    }
+
+    fn expand_geographic_candidates(&self, candidates: Vec<CellId>) -> Result<Vec<CellId>> {
+        let mut expanded: BTreeSet<_> = candidates.iter().cloned().collect();
+        for cell in candidates {
+            for (_, neighbour) in self.ellipsoidal_neighbors(&cell)? {
+                expanded.insert(neighbour.clone());
+                for (_, second) in self.ellipsoidal_neighbors(&neighbour)? {
+                    expanded.insert(second);
+                }
+            }
+            if expanded.len() > MAX_COVERAGE_CELLS {
+                return Err(Error::ExpansionTooLarge(expanded.len() as u64));
+            }
+        }
+        Ok(expanded.into_iter().collect())
+    }
+
+    fn cap_intersects_polygon(
+        &self,
+        cell: &CellId,
+        exterior: &[Point],
+        holes: &[Vec<Point>],
+        anchor: f64,
+    ) -> Result<bool> {
+        let vertices = self.cell_vertices_lonlat(cell, false)?;
+        let boundary = match cell.region() {
+            Region::NorthPolar => vertices
+                .iter()
+                .map(|point| point.1)
+                .fold(f64::INFINITY, f64::min),
+            Region::SouthPolar => vertices
+                .iter()
+                .map(|point| point.1)
+                .fold(f64::NEG_INFINITY, f64::max),
+            Region::Equatorial => unreachable!("cap cells are polar"),
+        };
+        let in_cap = |latitude: f64| match cell.region() {
+            Region::NorthPolar => latitude >= boundary - EPSILON,
+            Region::SouthPolar => latitude <= boundary + EPSILON,
+            Region::Equatorial => false,
+        };
+        if exterior.iter().any(|point| in_cap(point.1))
+            || holes.iter().flatten().any(|point| in_cap(point.1))
+        {
+            return Ok(true);
+        }
+        let pole = match cell.region() {
+            Region::NorthPolar => (anchor, 90.0),
+            Region::SouthPolar => (anchor, -90.0),
+            Region::Equatorial => unreachable!("cap cells are polar"),
+        };
+        Ok(polygon_covers(pole, exterior, holes))
     }
 
     fn geographic_cell_entry(
@@ -708,6 +853,43 @@ fn polygon_contains(point: Point, exterior: &[Point], holes: &[Vec<Point>]) -> b
         && holes
             .iter()
             .all(|hole| point_location(point, hole) == PointLocation::Outside)
+}
+
+fn polygon_covers(point: Point, exterior: &[Point], holes: &[Vec<Point>]) -> bool {
+    point_location(point, exterior) != PointLocation::Outside
+        && holes
+            .iter()
+            .all(|hole| point_location(point, hole) != PointLocation::Inside)
+}
+
+fn polygon_intersects_ring(exterior: &[Point], holes: &[Vec<Point>], ring: &[Point]) -> bool {
+    if ring
+        .iter()
+        .any(|point| polygon_covers(*point, exterior, holes))
+        || exterior
+            .iter()
+            .any(|point| point_location(*point, ring) != PointLocation::Outside)
+        || ring_intersects_ring(ring, exterior)
+    {
+        return true;
+    }
+    holes.iter().any(|hole| ring_intersects_ring(ring, hole))
+}
+
+fn ring_intersects_ring(left: &[Point], right: &[Point]) -> bool {
+    (0..left.len()).any(|left_index| {
+        let left_start = left[left_index];
+        let left_end = left[(left_index + 1) % left.len()];
+        (0..right.len()).any(|right_index| {
+            segment_intersection_parameter(
+                left_start,
+                left_end,
+                right[right_index],
+                right[(right_index + 1) % right.len()],
+            )
+            .is_some()
+        })
+    })
 }
 
 fn point_on_segment(point: Point, start: Point, end: Point) -> bool {
@@ -987,6 +1169,84 @@ mod tests {
             )
             .unwrap();
         assert!(without_center.len() < 9);
+    }
+
+    #[test]
+    fn projected_intersection_cover_finds_a_polygon_without_a_cell_centroid() {
+        let dggs = RhealpixDggs::wgs84_003();
+        let cell: CellId = "Q3330".parse().unwrap();
+        let vertices = dggs.cell_vertices_projected(&cell).unwrap();
+        let width = vertices[2].0 - vertices[0].0;
+        let point = (vertices[0].0 + width * 0.2, vertices[0].1 - width * 0.2);
+        let step = width / 10_000.0;
+        let polygon = [
+            point,
+            (point.0 + step, point.1),
+            (point.0 + step, point.1 - step),
+            (point.0, point.1 - step),
+        ];
+
+        assert!(
+            dggs.cells_from_polygon_projected(4, &polygon, &[], false)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            dggs.cells_from_polygon_projected_intersects(4, &polygon, &[], false)
+                .unwrap()
+                .contains(&cell)
+        );
+    }
+
+    #[test]
+    fn projected_intersection_cover_counts_closed_edge_contact() {
+        let dggs = RhealpixDggs::wgs84_003();
+        let cell: CellId = "Q3330".parse().unwrap();
+        let right = dggs.planar_neighbor(&cell, crate::Direction::Right);
+        let vertices = dggs.cell_vertices_projected(&cell).unwrap();
+        let width = vertices[2].0 - vertices[0].0;
+        let edge = vertices[2].0;
+        let polygon = [
+            (edge - width * 0.4, vertices[0].1 - width * 0.2),
+            (edge, vertices[0].1 - width * 0.2),
+            (edge, vertices[0].1 - width * 0.8),
+            (edge - width * 0.4, vertices[0].1 - width * 0.8),
+        ];
+        let actual = dggs
+            .cells_from_polygon_projected_intersects(4, &polygon, &[], false)
+            .unwrap();
+        assert!(actual.contains(&cell));
+        assert!(actual.contains(&right));
+        let reversed: Vec<_> = polygon.into_iter().rev().collect();
+        assert_eq!(
+            dggs.cells_from_polygon_projected_intersects(4, &reversed, &[], false)
+                .unwrap(),
+            actual
+        );
+    }
+
+    #[test]
+    fn projected_intersection_cover_excludes_cells_wholly_inside_holes() {
+        let dggs = RhealpixDggs::wgs84_003();
+        let cell: CellId = "Q3330".parse().unwrap();
+        let vertices = dggs.cell_vertices_projected(&cell).unwrap();
+        let width = vertices[2].0 - vertices[0].0;
+        let outer = [
+            (vertices[0].0 - width, vertices[0].1 + width),
+            (vertices[2].0 + width, vertices[0].1 + width),
+            (vertices[2].0 + width, vertices[2].1 - width),
+            (vertices[0].0 - width, vertices[2].1 - width),
+        ];
+        let hole = vec![
+            (vertices[0].0 - width * 0.1, vertices[0].1 + width * 0.1),
+            (vertices[2].0 + width * 0.1, vertices[0].1 + width * 0.1),
+            (vertices[2].0 + width * 0.1, vertices[2].1 - width * 0.1),
+            (vertices[0].0 - width * 0.1, vertices[2].1 - width * 0.1),
+        ];
+        let actual = dggs
+            .cells_from_polygon_projected_intersects(4, &outer, &[hole], false)
+            .unwrap();
+        assert!(!actual.contains(&cell));
     }
 
     #[test]

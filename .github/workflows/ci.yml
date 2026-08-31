@@ -42,9 +42,11 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install pytest numpy
       - name: Install the locally built wheel
-        run: python -m pip install --no-index --no-deps --find-links dist "rhealpixdggs-rs==0.10.0"
+        run: python -m pip install --no-index --no-deps --find-links dist "rhealpixdggs-rs==0.10.1"
       - name: Verify installed package
-        run: python -c "import rhealpixdggs as rh; assert rh.__version__ == '0.10.0'"
+        run: python -c "import rhealpixdggs as rh; assert rh.__version__ == '0.10.1'"
+      - name: Verify README figures
+        run: python tools/generate_readme_figures.py --check
       - run: python -m pytest
 
   python-geo:
@@ -65,6 +67,6 @@ jobs:
           python -m pip install pytest numpy
           "geopandas>=0.14,<2" "pyogrio>=0.7,<1" "shapely>=2,<3"
       - name: Install the locally built wheel
-        run: python -m pip install --no-index --no-deps --find-links dist "rhealpixdggs-rs==0.10.0"
+        run: python -m pip install --no-index --no-deps --find-links dist "rhealpixdggs-rs==0.10.1"
       - name: Run GeoPackage adapter tests
         run: python -m pytest tests/python/test_geo.py

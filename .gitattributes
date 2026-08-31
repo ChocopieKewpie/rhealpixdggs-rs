@@ -2,3 +2,4 @@
 # Keep their checked-out bytes identical on Windows and Unix platforms.
 tests/fixtures/rhealpixdggs-py-0.6.0/*.json text eol=lf
 tests/fixtures/rhealpixdggs-py-0.6.0/*.sha256 text eol=lf
+docs/images/*.svg text eol=lf

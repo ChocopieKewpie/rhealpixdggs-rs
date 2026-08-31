@@ -1,6 +1,17 @@
 # Changelog
 
-## 0.10.0 (unreleased)
+## 0.10.1 (unreleased)
+
+- Added projected and geographic polygon intersection coverage, selecting all
+  cells with interior, edge, or corner contact while respecting holes.
+- Added the H3-style Python `polygon_to_cells_intersects` API and GeoPackage
+  `coverage_mode="intersects"` / `--coverage-mode intersects` options.
+- Added regression coverage for tiny polygons, closed edge contact, holes,
+  antimeridian handling, polar caps, compaction, and orientation stability.
+- Reorganised the README around five reproducible diagrams covering projection,
+  hierarchy, polar shapes, topology, stable IDs, and traversal.
+
+## 0.10.0 (2026-08-31)
 
 - Audited all 20 open `rhealpixdggs-py` v0.7.0 milestone issues against the
   Rust implementation and documented the disposition of each one.

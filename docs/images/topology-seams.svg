@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="490" viewBox="0 0 1200 490" role="img" aria-labelledby="title">
+<title id="title">Topology across seams, poles and antimeridian</title>
+<style>
+  :root { color-scheme: light dark; }
+  .ink { fill:#172033; } .muted { fill:#526079; } .line { stroke:#27364f; }
+  .panel { fill:#f7f9fc; stroke:#c8d2e2; } .grid { stroke:#93a4bd; }
+  .blue { fill:#4c78a8; } .teal { fill:#2a9d8f; } .gold { fill:#e9c46a; }
+  .coral { fill:#e76f51; } .violet { fill:#7c6bb2; }
+  text { font-family:Inter,Segoe UI,Arial,sans-serif; }
+  @media (prefers-color-scheme: dark) {
+    .ink { fill:#e6edf3; } .muted { fill:#a8b3c5; } .line { stroke:#c4cedd; }
+    .panel { fill:#161b22; stroke:#445168; } .grid { stroke:#66758c; }
+  }
+</style>
+<text x="600.0" y="36.0" class="ink" text-anchor="middle" font-size="25" font-weight="700">Topology stays continuous where the map is cut</text>
+<rect x="28.0" y="72.0" width="364.0" height="280.0" rx="12.0" class="panel"/>
+<text x="210.0" y="105.0" class="ink" text-anchor="middle" font-size="18" font-weight="700">face seam</text>
+<rect x="68.0" y="145.0" width="105.0" height="105.0" rx="7.0" class="blue"/>
+<rect x="247.0" y="145.0" width="105.0" height="105.0" rx="7.0" class="teal"/>
+<text x="120.0" y="207.0" class="ink" text-anchor="middle" font-size="18" font-weight="700">R888</text>
+<text x="299.0" y="207.0" class="ink" text-anchor="middle" font-size="18" font-weight="700">O666</text>
+<line x1="174.0" y1="197.0" x2="246.0" y2="197.0" class="line" stroke-width="3" stroke-dasharray="7 5"/>
+<text x="210.0" y="280.0" class="ink" text-anchor="middle" font-size="15" font-weight="600">direct neighbours</text>
+<text x="210.0" y="310.0" class="muted" text-anchor="middle" font-size="13" font-weight="500">east / west</text>
+<rect x="418.0" y="72.0" width="364.0" height="280.0" rx="12.0" class="panel"/>
+<text x="600.0" y="105.0" class="ink" text-anchor="middle" font-size="18" font-weight="700">polar seam</text>
+<rect x="458.0" y="145.0" width="105.0" height="105.0" rx="7.0" class="blue"/>
+<rect x="637.0" y="145.0" width="105.0" height="105.0" rx="7.0" class="teal"/>
+<text x="510.0" y="207.0" class="ink" text-anchor="middle" font-size="18" font-weight="700">Q888</text>
+<text x="689.0" y="207.0" class="ink" text-anchor="middle" font-size="18" font-weight="700">S666</text>
+<line x1="564.0" y1="197.0" x2="636.0" y2="197.0" class="line" stroke-width="3" stroke-dasharray="7 5"/>
+<text x="600.0" y="280.0" class="ink" text-anchor="middle" font-size="15" font-weight="600">direct neighbours</text>
+<text x="600.0" y="310.0" class="muted" text-anchor="middle" font-size="13" font-weight="500">south / north</text>
+<rect x="808.0" y="72.0" width="364.0" height="280.0" rx="12.0" class="panel"/>
+<text x="990.0" y="105.0" class="ink" text-anchor="middle" font-size="18" font-weight="700">antimeridian</text>
+<rect x="848.0" y="145.0" width="105.0" height="105.0" rx="7.0" class="blue"/>
+<rect x="1027.0" y="145.0" width="105.0" height="105.0" rx="7.0" class="teal"/>
+<text x="900.0" y="207.0" class="ink" text-anchor="middle" font-size="18" font-weight="700">R555</text>
+<text x="1079.0" y="207.0" class="ink" text-anchor="middle" font-size="18" font-weight="700">O333</text>
+<line x1="954.0" y1="197.0" x2="1026.0" y2="197.0" class="line" stroke-width="3" stroke-dasharray="7 5"/>
+<text x="990.0" y="280.0" class="ink" text-anchor="middle" font-size="15" font-weight="600">direct neighbours</text>
+<text x="990.0" y="310.0" class="muted" text-anchor="middle" font-size="13" font-weight="500">+180° / −180°</text>
+<text x="600.0" y="400.0" class="ink" text-anchor="middle" font-size="17" font-weight="700">Polar traversal example</text>
+<text x="600.0" y="430.0" class="ink" text-anchor="middle" font-size="16" font-weight="500">grid_ring('N0', 1) → N1, N3, Q2, R0</text>
+<text x="600.0" y="458.0" class="muted" text-anchor="middle" font-size="14" font-weight="500">The graph follows globe adjacency—not visual distance in the unfolded plane.</text>
+</svg>

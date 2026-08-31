@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="560" viewBox="0 0 1080 560" role="img" aria-labelledby="title">
+<title id="title">rHEALPix faces and aperture-9 hierarchy</title>
+<style>
+  :root { color-scheme: light dark; }
+  .ink { fill:#172033; } .muted { fill:#526079; } .line { stroke:#27364f; }
+  .panel { fill:#f7f9fc; stroke:#c8d2e2; } .grid { stroke:#93a4bd; }
+  .blue { fill:#4c78a8; } .teal { fill:#2a9d8f; } .gold { fill:#e9c46a; }
+  .coral { fill:#e76f51; } .violet { fill:#7c6bb2; }
+  text { font-family:Inter,Segoe UI,Arial,sans-serif; }
+  @media (prefers-color-scheme: dark) {
+    .ink { fill:#e6edf3; } .muted { fill:#a8b3c5; } .line { stroke:#c4cedd; }
+    .panel { fill:#161b22; stroke:#445168; } .grid { stroke:#66758c; }
+  }
+</style>
+<text x="540.0" y="35.0" class="ink" text-anchor="middle" font-size="25" font-weight="700">Six faces, one aperture-9 hierarchy</text>
+<rect x="250.0" y="75.0" width="105.0" height="105.0" rx="0.0" class="violet"/>
+<text x="302.5" y="138.0" class="ink" text-anchor="middle" font-size="26" font-weight="700">N</text>
+<rect x="250.0" y="180.0" width="105.0" height="105.0" rx="0.0" class="blue"/>
+<text x="302.5" y="243.0" class="ink" text-anchor="middle" font-size="26" font-weight="700">O</text>
+<rect x="355.0" y="180.0" width="105.0" height="105.0" rx="0.0" class="teal"/>
+<text x="407.5" y="243.0" class="ink" text-anchor="middle" font-size="26" font-weight="700">P</text>
+<rect x="460.0" y="180.0" width="105.0" height="105.0" rx="0.0" class="gold"/>
+<text x="512.5" y="243.0" class="ink" text-anchor="middle" font-size="26" font-weight="700">Q</text>
+<rect x="565.0" y="180.0" width="105.0" height="105.0" rx="0.0" class="coral"/>
+<text x="617.5" y="243.0" class="ink" text-anchor="middle" font-size="26" font-weight="700">R</text>
+<rect x="250.0" y="285.0" width="105.0" height="105.0" rx="0.0" class="violet"/>
+<text x="302.5" y="348.0" class="ink" text-anchor="middle" font-size="26" font-weight="700">S</text>
+<text x="460.0" y="310.0" class="muted" text-anchor="middle" font-size="14" font-weight="500">planar rHEALPix arrangement (north_square = south_square = 0)</text>
+<rect x="720.0" y="72.0" width="285.0" height="285.0" rx="12.0" class="panel"/>
+<text x="860.0" y="395.0" class="muted" text-anchor="middle" font-size="14" font-weight="500">resolution 0: Q</text>
+<text x="860.0" y="419.0" class="muted" text-anchor="middle" font-size="14" font-weight="500">resolution 1: Q3</text>
+<text x="860.0" y="443.0" class="muted" text-anchor="middle" font-size="14" font-weight="500">resolution 2: Q38</text>
+<text x="860.0" y="467.0" class="muted" text-anchor="middle" font-size="14" font-weight="500">resolution 3: Q381</text>
+<line x1="821.0" y1="90.0" x2="821.0" y2="339.0" class="grid" stroke-width="1.4"/>
+<line x1="738.0" y1="173.0" x2="987.0" y2="173.0" class="grid" stroke-width="1.4"/>
+<line x1="904.0" y1="90.0" x2="904.0" y2="339.0" class="grid" stroke-width="1.4"/>
+<line x1="738.0" y1="256.0" x2="987.0" y2="256.0" class="grid" stroke-width="1.4"/>
+<rect x="738.0" y="173.0" width="83.0" height="83.0" rx="0.0" class="blue"/>
+<text x="779.5" y="220.5" class="ink" text-anchor="middle" font-size="22" font-weight="700">3</text>
+<line x1="765.7" y1="173.0" x2="765.7" y2="256.0" class="grid" stroke-width="1.4"/>
+<line x1="738.0" y1="200.7" x2="821.0" y2="200.7" class="grid" stroke-width="1.4"/>
+<line x1="793.3" y1="173.0" x2="793.3" y2="256.0" class="grid" stroke-width="1.4"/>
+<line x1="738.0" y1="228.3" x2="821.0" y2="228.3" class="grid" stroke-width="1.4"/>
+<rect x="793.3" y="228.3" width="27.7" height="27.7" rx="0.0" class="teal"/>
+<text x="807.2" y="248.2" class="ink" text-anchor="middle" font-size="17" font-weight="700">8</text>
+<line x1="802.6" y1="228.3" x2="802.6" y2="256.0" class="grid" stroke-width="1.4"/>
+<line x1="793.3" y1="237.6" x2="821.0" y2="237.6" class="grid" stroke-width="1.4"/>
+<line x1="811.8" y1="228.3" x2="811.8" y2="256.0" class="grid" stroke-width="1.4"/>
+<line x1="793.3" y1="246.8" x2="821.0" y2="246.8" class="grid" stroke-width="1.4"/>
+<rect x="802.6" y="228.3" width="9.2" height="9.2" rx="0.0" class="coral"/>
+<text x="807.2" y="238.9" class="ink" text-anchor="middle" font-size="12" font-weight="700">1</text>
+<text x="860.0" y="505.0" class="ink" text-anchor="middle" font-size="15" font-weight="600">Each digit selects one row-major child</text>
+<text x="860.0" y="528.0" class="muted" text-anchor="middle" font-size="14" font-weight="500">0 1 2  /  3 4 5  /  6 7 8</text>
+</svg>

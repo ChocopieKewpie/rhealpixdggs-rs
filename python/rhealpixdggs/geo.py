@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from . import numpy as _numpy
 from ._rhealpixdggs import (
@@ -18,6 +18,7 @@ from ._rhealpixdggs import (
     compact_cells as _compact_cells,
     get_resolution as _get_resolution,
     polygon_to_cells as _polygon_to_cells,
+    polygon_to_cells_intersects as _polygon_to_cells_intersects,
     str_to_int as _str_to_int,
 )
 
@@ -59,20 +60,29 @@ def geometry_to_cells(
     resolution: int,
     *,
     compact: bool = False,
+    coverage_mode: Literal["centroid", "intersects"] = "centroid",
 ) -> list[str]:
     """Cover a Shapely Polygon/MultiPolygon with WGS84 rHEALPix cells.
 
-    A cell is selected when its ellipsoidal centroid lies strictly inside the
-    polygon and outside all holes, matching ``rhealpixdggs-py`` ``polyfill``
-    semantics. Coordinates must be longitude/latitude degrees (EPSG:4326).
+    ``coverage_mode="centroid"`` preserves ``rhealpixdggs-py`` polyfill
+    semantics. ``coverage_mode="intersects"`` selects cells whose closed
+    geometry touches the polygon, including edge and corner contact.
+    Coordinates must be longitude/latitude degrees (EPSG:4326).
     """
 
+    if coverage_mode not in {"centroid", "intersects"}:
+        raise ValueError("coverage_mode must be 'centroid' or 'intersects'")
+    cover = (
+        _polygon_to_cells
+        if coverage_mode == "centroid"
+        else _polygon_to_cells_intersects
+    )
     cells: set[str] = set()
     for polygon in _polygon_members(geometry):
         exterior = _ring_latlng(polygon.exterior.coords)
         holes = [_ring_latlng(ring.coords) for ring in polygon.interiors]
         cells.update(
-            _polygon_to_cells(
+            cover(
                 exterior,
                 resolution,
                 holes=holes,
@@ -181,10 +191,16 @@ def polygon_to_geodataframe(
     compact: bool = False,
     points_per_edge: int = 4,
     parallel: bool | None = None,
+    coverage_mode: Literal["centroid", "intersects"] = "centroid",
 ) -> Any:
     """Cover an EPSG:4326 polygon and return its cell polygons."""
 
-    cells = geometry_to_cells(geometry, resolution, compact=compact)
+    cells = geometry_to_cells(
+        geometry,
+        resolution,
+        compact=compact,
+        coverage_mode=coverage_mode,
+    )
     return cells_to_geodataframe(
         cells,
         points_per_edge=points_per_edge,
@@ -227,6 +243,7 @@ def polygon_file_to_geopackage(
     points_per_edge: int = 4,
     parallel: bool | None = None,
     overwrite: bool = False,
+    coverage_mode: Literal["centroid", "intersects"] = "centroid",
 ) -> Any:
     """Convert polygon features from a vector file into a cell GeoPackage.
 
@@ -266,6 +283,7 @@ def polygon_file_to_geopackage(
         compact=compact,
         points_per_edge=points_per_edge,
         parallel=parallel,
+        coverage_mode=coverage_mode,
     )
     write_geopackage(
         frame,

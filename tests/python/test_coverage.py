@@ -152,6 +152,44 @@ def test_polygon_crosses_antimeridian() -> None:
     assert {rh.get_base_cell_number(cell) for cell in cells} == {1, 4}
 
 
+def test_polygon_intersection_cover_includes_tiny_nz_fragment() -> None:
+    target = rh.latlng_to_cell(-40.0, 175.0, 8)
+    polygon = [
+        (-40.0, 175.0),
+        (-40.0, 175.000_000_1),
+        (-39.999_999_9, 175.000_000_1),
+        (-39.999_999_9, 175.0),
+    ]
+    assert rh.polygon_to_cells(polygon, 8) == []
+    cells = rh.polygon_to_cells_intersects(polygon, 8)
+    assert target in cells
+    assert rh.polygon_to_cells_intersects(list(reversed(polygon)), 8) == cells
+
+
+def test_polygon_intersection_cover_is_a_strict_superset_for_unit_square() -> None:
+    centroid = set(rh.polygon_to_cells(UNIT_SQUARE_LATLNG, 5))
+    intersects = set(rh.polygon_to_cells_intersects(UNIT_SQUARE_LATLNG, 5))
+    assert centroid < intersects
+
+
+def test_polygon_intersection_cover_handles_compaction_antimeridian_and_caps() -> None:
+    raw = rh.polygon_to_cells_intersects(UNIT_SQUARE_LATLNG, 6)
+    compacted = rh.polygon_to_cells_intersects(
+        UNIT_SQUARE_LATLNG, 6, compact=True
+    )
+    assert len(compacted) < len(raw)
+    assert set(rh.uncompact_cells(compacted, 6)) == set(raw)
+
+    antimeridian = [(1.0, 179.0), (1.0, -179.0), (-1.0, -179.0), (-1.0, 179.0)]
+    cells = rh.polygon_to_cells_intersects(antimeridian, 4)
+    assert {rh.get_base_cell_number(cell) for cell in cells} == {1, 4}
+
+    north_pole = [(89.0, -1.0), (90.0, -1.0), (90.0, 1.0), (89.0, 1.0)]
+    south_pole = [(-89.0, -1.0), (-90.0, -1.0), (-90.0, 1.0), (-89.0, 1.0)]
+    assert "N4444" in rh.polygon_to_cells_intersects(north_pole, 4)
+    assert "S4444" in rh.polygon_to_cells_intersects(south_pole, 4)
+
+
 def test_coverage_validation() -> None:
     with pytest.raises(ValueError, match="at least two"):
         rh.line_to_cells([(0.0, 0.0)], 3)

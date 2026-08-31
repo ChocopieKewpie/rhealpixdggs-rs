@@ -590,7 +590,7 @@ impl CellId {
     /// Encode the cell as a stable resolution-major integer.
     ///
     /// This encoding is intended as a language-neutral interchange form. It
-    /// covers all WGS84_003 cells through resolution 15 in fewer than 51 bits.
+    /// covers all WGS84_003 cells through resolution 15 within 51 bits.
     pub fn to_u64(&self) -> u64 {
         let resolution = self.resolution();
         let cells_per_face = APERTURE.pow(u32::from(resolution));

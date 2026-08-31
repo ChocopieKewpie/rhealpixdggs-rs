@@ -21,6 +21,12 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--points-per-edge", type=int, default=4)
     command.add_argument("--compact", action="store_true")
     command.add_argument(
+        "--coverage-mode",
+        choices=("centroid", "intersects"),
+        default="centroid",
+        help="cell selection rule (default: centroid)",
+    )
+    command.add_argument(
         "--parallel",
         choices=("auto", "yes", "no"),
         default="auto",
@@ -43,6 +49,7 @@ def main() -> None:
         points_per_edge=arguments.points_per_edge,
         parallel=parallel,
         overwrite=arguments.overwrite,
+        coverage_mode=arguments.coverage_mode,
     )
     print(f"wrote {len(frame):,} cells to {arguments.output}")
 

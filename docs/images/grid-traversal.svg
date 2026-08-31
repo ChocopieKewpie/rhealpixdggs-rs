@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="470" viewBox="0 0 1000 470" role="img" aria-labelledby="title">
+<title id="title">rHEALPix hierarchy and grid-ring traversal</title>
+<style>
+  :root { color-scheme: light dark; }
+  .ink { fill:#172033; } .muted { fill:#526079; } .line { stroke:#27364f; }
+  .panel { fill:#f7f9fc; stroke:#c8d2e2; } .grid { stroke:#93a4bd; }
+  .blue { fill:#4c78a8; } .teal { fill:#2a9d8f; } .gold { fill:#e9c46a; }
+  .coral { fill:#e76f51; } .violet { fill:#7c6bb2; }
+  text { font-family:Inter,Segoe UI,Arial,sans-serif; }
+  @media (prefers-color-scheme: dark) {
+    .ink { fill:#e6edf3; } .muted { fill:#a8b3c5; } .line { stroke:#c4cedd; }
+    .panel { fill:#161b22; stroke:#445168; } .grid { stroke:#66758c; }
+  }
+</style>
+<text x="500.0" y="35.0" class="ink" text-anchor="middle" font-size="25" font-weight="700">Hierarchy and edge traversal</text>
+<rect x="35.0" y="65.0" width="360.0" height="370.0" rx="12.0" class="panel"/>
+<text x="215.0" y="105.0" class="ink" text-anchor="middle" font-size="17" font-weight="700">Q4 and its nine children</text>
+<rect x="65.0" y="147.0" width="100.0" height="100.0" rx="0.0" class="panel"/>
+<text x="115.0" y="203.0" class="ink" text-anchor="middle" font-size="14" font-weight="500">Q40</text>
+<rect x="165.0" y="147.0" width="100.0" height="100.0" rx="0.0" class="panel"/>
+<text x="215.0" y="203.0" class="ink" text-anchor="middle" font-size="14" font-weight="500">Q41</text>
+<rect x="265.0" y="147.0" width="100.0" height="100.0" rx="0.0" class="panel"/>
+<text x="315.0" y="203.0" class="ink" text-anchor="middle" font-size="14" font-weight="500">Q42</text>
+<rect x="65.0" y="247.0" width="100.0" height="100.0" rx="0.0" class="panel"/>
+<text x="115.0" y="303.0" class="ink" text-anchor="middle" font-size="14" font-weight="500">Q43</text>
+<rect x="165.0" y="247.0" width="100.0" height="100.0" rx="0.0" class="blue"/>
+<text x="215.0" y="303.0" class="ink" text-anchor="middle" font-size="14" font-weight="700">Q44</text>
+<rect x="265.0" y="247.0" width="100.0" height="100.0" rx="0.0" class="panel"/>
+<text x="315.0" y="303.0" class="ink" text-anchor="middle" font-size="14" font-weight="500">Q45</text>
+<rect x="65.0" y="347.0" width="100.0" height="100.0" rx="0.0" class="panel"/>
+<text x="115.0" y="403.0" class="ink" text-anchor="middle" font-size="14" font-weight="500">Q46</text>
+<rect x="165.0" y="347.0" width="100.0" height="100.0" rx="0.0" class="panel"/>
+<text x="215.0" y="403.0" class="ink" text-anchor="middle" font-size="14" font-weight="500">Q47</text>
+<rect x="265.0" y="347.0" width="100.0" height="100.0" rx="0.0" class="panel"/>
+<text x="315.0" y="403.0" class="ink" text-anchor="middle" font-size="14" font-weight="500">Q48</text>
+<rect x="430.0" y="65.0" width="535.0" height="370.0" rx="12.0" class="panel"/>
+<text x="698.0" y="105.0" class="ink" text-anchor="middle" font-size="17" font-weight="700">grid_ring('Q44', 1)</text>
+<rect x="644.0" y="127.0" width="108.0" height="76.0" rx="9.0" class="teal"/>
+<text x="698.0" y="171.0" class="ink" text-anchor="middle" font-size="16" font-weight="700">Q41</text>
+<line x1="698.0" y1="265.0" x2="698.0" y2="165.0" class="line" stroke-width="2"/>
+<rect x="501.0" y="227.0" width="108.0" height="76.0" rx="9.0" class="gold"/>
+<text x="555.0" y="271.0" class="ink" text-anchor="middle" font-size="16" font-weight="700">Q43</text>
+<line x1="698.0" y1="265.0" x2="555.0" y2="265.0" class="line" stroke-width="2"/>
+<rect x="786.0" y="227.0" width="108.0" height="76.0" rx="9.0" class="coral"/>
+<text x="840.0" y="271.0" class="ink" text-anchor="middle" font-size="16" font-weight="700">Q45</text>
+<line x1="698.0" y1="265.0" x2="840.0" y2="265.0" class="line" stroke-width="2"/>
+<rect x="644.0" y="327.0" width="108.0" height="76.0" rx="9.0" class="violet"/>
+<text x="698.0" y="371.0" class="ink" text-anchor="middle" font-size="16" font-weight="700">Q47</text>
+<line x1="698.0" y1="265.0" x2="698.0" y2="365.0" class="line" stroke-width="2"/>
+<rect x="644.0" y="227.0" width="108.0" height="76.0" rx="9.0" class="blue"/>
+<text x="698.0" y="271.0" class="ink" text-anchor="middle" font-size="17" font-weight="700">Q44</text>
+<text x="698.0" y="413.0" class="muted" text-anchor="middle" font-size="14" font-weight="500">parent/children use the identifier tree; rings use edge adjacency</text>
+</svg>
