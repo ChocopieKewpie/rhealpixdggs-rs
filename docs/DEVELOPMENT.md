@@ -32,7 +32,7 @@ PyO3's Python 3.9 stable ABI.
 
 ## README figures
 
-The eight SVG figures in `docs/images/` are deterministic outputs of the public
+The nine SVG figures in `docs/images/` are deterministic outputs of the public
 Python API plus a small dependency-free SVG renderer:
 
 ```bash
@@ -43,6 +43,9 @@ python tools/generate_readme_figures.py --check
 The generator verifies every documented cell shape, neighbour relationship,
 ring, hierarchy path, and integer mapping before writing the assets. CI uses
 `--check` to prevent documentation examples drifting from the implementation.
+The cover globe additionally reads the bundled public-domain Natural Earth
+1:110m land polygons documented in `docs/data/NATURAL_EARTH.md`; generation
+remains fully offline.
 
 ## Conformance corpora
 

@@ -6,6 +6,12 @@ equal-area faces and recursively subdivides every cell into a 3×3 grid: an
 aperture-9 hierarchy that remains traversable across projection seams, polar
 folds, and the antimeridian.
 
+![Resolution-1 rHEALPix cells rendered on a globe](docs/images/cover-globe.svg)
+
+The cover uses actual densified resolution-1 boundaries, translucent face
+colours, orthographic horizon clipping, and a bundled Natural Earth 1:110m
+continent outline. It is generated entirely offline with the other figures.
+
 ![Actual rHEALPix cells in projected metres](docs/images/projected-grid.svg)
 
 This is the implemented WGS84 rHEALPix plane rather than an illustrative grid:

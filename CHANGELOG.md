@@ -8,9 +8,12 @@
   `coverage_mode="intersects"` / `--coverage-mode intersects` options.
 - Added regression coverage for tiny polygons, closed edge contact, holes,
   antimeridian handling, polar caps, compaction, and orientation stability.
-- Reorganised the README around eight reproducible diagrams covering the actual
+- Reorganised the README around nine reproducible diagrams covering a
+  resolution-1 orthographic globe cover, the actual
   projected grid, geographic cell footprints, hierarchy, polar shapes,
   GIS-style seam traversal, stable IDs, and topology.
+- Added translucent face fills and a bundled public-domain Natural Earth land
+  outline to the globe cover while keeping figure generation fully offline.
 
 ## 0.10.0 (2026-08-31)
 

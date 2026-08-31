@@ -8,6 +8,8 @@ assets match the current public API and generator byte-for-byte.
 from __future__ import annotations
 
 import argparse
+import math
+import struct
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Tuple
 
@@ -111,6 +113,244 @@ def _transform(bounds: Tuple[float, float, float, float], panel: Tuple[float, fl
     x_offset = panel_x + (panel_width - (x_max - x_min) * scale) / 2
     y_offset = panel_y + (panel_height - (y_max - y_min) * scale) / 2
     return lambda point: (x_offset + (point[0] - x_min) * scale, y_offset + (y_max - point[1]) * scale)
+
+
+def _orthographic(longitude: float, latitude: float, center: Point) -> Tuple[float, float, float]:
+    longitude_radians = math.radians(longitude)
+    latitude_radians = math.radians(latitude)
+    center_longitude = math.radians(center[0])
+    center_latitude = math.radians(center[1])
+    delta = longitude_radians - center_longitude
+    x = math.cos(latitude_radians) * math.sin(delta)
+    y = (
+        math.cos(center_latitude) * math.sin(latitude_radians)
+        - math.sin(center_latitude) * math.cos(latitude_radians) * math.cos(delta)
+    )
+    visibility = (
+        math.sin(center_latitude) * math.sin(latitude_radians)
+        + math.cos(center_latitude) * math.cos(latitude_radians) * math.cos(delta)
+    )
+    return x, y, visibility
+
+
+def _horizon_point(start: Point, end: Point, center: Point) -> Point:
+    start_longitude, start_latitude = start
+    end_longitude = _longitude_near(end[0], start_longitude)
+    end_latitude = end[1]
+    start_visible = _orthographic(start_longitude, start_latitude, center)[2] >= 0.0
+    low, high = 0.0, 1.0
+    for _ in range(48):
+        fraction = (low + high) / 2.0
+        point = (
+            start_longitude + fraction * (end_longitude - start_longitude),
+            start_latitude + fraction * (end_latitude - start_latitude),
+        )
+        visible = _orthographic(point[0], point[1], center)[2] >= 0.0
+        if visible == start_visible:
+            low = fraction
+        else:
+            high = fraction
+    fraction = (low + high) / 2.0
+    return (
+        start_longitude + fraction * (end_longitude - start_longitude),
+        start_latitude + fraction * (end_latitude - start_latitude),
+    )
+
+
+def _orthographic_segments(
+    lonlats: List[Point],
+    center: Point,
+    globe: Tuple[float, float, float],
+    close: bool = False,
+) -> List[List[Point]]:
+    if not lonlats:
+        return []
+    values = [lonlats[0]]
+    for longitude, latitude in lonlats[1:]:
+        values.append((_longitude_near(longitude, values[-1][0]), latitude))
+    if close:
+        values.append((_longitude_near(values[0][0], values[-1][0]), values[0][1]))
+    center_x, center_y, radius = globe
+
+    def project(point: Point) -> Point:
+        x, y, _ = _orthographic(point[0], point[1], center)
+        return center_x + radius * x, center_y - radius * y
+
+    result: List[List[Point]] = []
+    current: List[Point] = []
+    for start, end in zip(values, values[1:]):
+        start_visible = _orthographic(start[0], start[1], center)[2] >= 0.0
+        end_visible = _orthographic(end[0], end[1], center)[2] >= 0.0
+        if start_visible and not current:
+            current = [project(start)]
+        if start_visible and end_visible:
+            current.append(project(end))
+        elif start_visible and not end_visible:
+            current.append(project(_horizon_point(start, end, center)))
+            if len(current) > 1:
+                result.append(current)
+            current = []
+        elif not start_visible and end_visible:
+            current = [project(_horizon_point(start, end, center)), project(end)]
+    if len(current) > 1:
+        result.append(current)
+    return result
+
+
+def _visible_fill_path(segment: List[Point], globe: Tuple[float, float, float]) -> str:
+    if len(segment) < 3:
+        return ""
+    center_x, center_y, radius = globe
+    commands = [f"M {segment[0][0]:.1f} {segment[0][1]:.1f}"]
+    commands.extend(f"L {x:.1f} {y:.1f}" for x, y in segment[1:])
+    first, last = segment[0], segment[-1]
+    if math.hypot(first[0] - last[0], first[1] - last[1]) > 1.0:
+        last_angle = math.atan2(last[1] - center_y, last[0] - center_x)
+        first_angle = math.atan2(first[1] - center_y, first[0] - center_x)
+        clockwise_delta = (first_angle - last_angle) % (2.0 * math.pi)
+        sweep = 1 if clockwise_delta <= math.pi else 0
+        commands.append(
+            f"A {radius:.1f} {radius:.1f} 0 0 {sweep} {first[0]:.1f} {first[1]:.1f}"
+        )
+    commands.append("Z")
+    return " ".join(commands)
+
+
+def _natural_earth_land() -> List[List[Point]]:
+    """Read polygon parts from the bundled Natural Earth 1:110m shapefile."""
+
+    data = (ROOT / "docs" / "data" / "ne_110m_land.shp").read_bytes()
+    if len(data) < 100 or struct.unpack_from(">i", data, 0)[0] != 9994:
+        raise ValueError("invalid Natural Earth shapefile header")
+    rings: List[List[Point]] = []
+    offset = 100
+    while offset + 8 <= len(data):
+        content_words = struct.unpack_from(">i", data, offset + 4)[0]
+        content_start = offset + 8
+        content_end = content_start + content_words * 2
+        if content_end > len(data):
+            raise ValueError("truncated Natural Earth shapefile record")
+        shape_type = struct.unpack_from("<i", data, content_start)[0]
+        if shape_type == 5:
+            part_count, point_count = struct.unpack_from("<ii", data, content_start + 36)
+            part_start = content_start + 44
+            point_start = part_start + 4 * part_count
+            starts = list(struct.unpack_from(f"<{part_count}i", data, part_start))
+            starts.append(point_count)
+            points = [
+                struct.unpack_from("<dd", data, point_start + 16 * index)
+                for index in range(point_count)
+            ]
+            for start, end in zip(starts, starts[1:]):
+                if end - start >= 2:
+                    rings.append([(float(x), float(y)) for x, y in points[start:end]])
+        elif shape_type != 0:
+            raise ValueError(f"unexpected Natural Earth shape type {shape_type}")
+        offset = content_end
+    return rings
+
+
+def cover_globe() -> str:
+    center = (170.0, -22.0)
+    globe = (1130.0, 450.0, 340.0)
+    parts = [
+        '<defs><radialGradient id="ocean" cx="35%" cy="28%" r="75%"><stop offset="0%" stop-color="#f5fbff"/><stop offset="70%" stop-color="#d8e8f5"/><stop offset="100%" stop-color="#b8ccdf"/></radialGradient><filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#071224" flood-opacity="0.38"/></filter></defs>',
+        '<rect width="1600" height="900" fill="#0b1730"/>',
+        '<circle cx="1130" cy="450" r="340" fill="url(#ocean)" stroke="#ffffff" stroke-width="3" filter="url(#shadow)"/>',
+        '<circle cx="1050" cy="355" r="205" fill="#ffffff" opacity="0.08"/>',
+    ]
+
+    face_colors = {
+        "N": "#7c6bb2",
+        "O": "#4c78a8",
+        "P": "#2a9d8f",
+        "Q": "#d19b24",
+        "R": "#e76f51",
+        "S": "#7c6bb2",
+    }
+
+    # Fill visible resolution-1 cells, closing horizon crossings with a
+    # circular arc so no back-hemisphere geometry leaks into the globe.
+    for identifier in _cells_at_resolution(1):
+        boundary = rh.cell_to_boundary_densified(identifier, points_per_edge=48)
+        lonlats = [(float(longitude), float(latitude)) for latitude, longitude in boundary]
+        for segment in _orthographic_segments(lonlats, center, globe, close=True):
+            path = _visible_fill_path(segment, globe)
+            if path:
+                parts.append(
+                    f'<path d="{path}" fill="{face_colors[identifier[0]]}" '
+                    'fill-opacity="0.22" stroke="none"/>'
+                )
+
+    # Geographic graticule, clipped analytically at the visible hemisphere.
+    for longitude in range(-180, 180, 30):
+        points = [(float(longitude), float(latitude)) for latitude in range(-90, 91, 2)]
+        for segment in _orthographic_segments(points, center, globe):
+            values = " ".join(f"{x:.1f},{y:.1f}" for x, y in segment)
+            parts.append(f'<polyline points="{values}" fill="none" stroke="#68819a" stroke-width="1" opacity="0.32"/>')
+    for latitude in range(-60, 61, 30):
+        points = [(float(longitude), float(latitude)) for longitude in range(-180, 181, 2)]
+        for segment in _orthographic_segments(points, center, globe):
+            values = " ".join(f"{x:.1f},{y:.1f}" for x, y in segment)
+            parts.append(f'<polyline points="{values}" fill="none" stroke="#68819a" stroke-width="1" opacity="0.32"/>')
+
+    for identifier in _cells_at_resolution(1):
+        boundary = rh.cell_to_boundary_densified(identifier, points_per_edge=48)
+        lonlats = [(float(longitude), float(latitude)) for latitude, longitude in boundary]
+        for segment in _orthographic_segments(lonlats, center, globe, close=True):
+            values = " ".join(f"{x:.1f},{y:.1f}" for x, y in segment)
+            parts.append(
+                f'<polyline points="{values}" fill="none" stroke="{face_colors[identifier[0]]}" '
+                'stroke-width="3.2" opacity="0.95" stroke-linecap="round" stroke-linejoin="round"/>'
+            )
+
+    # Coastline outline from the bundled public-domain Natural Earth 1:110m
+    # land polygons. A pale under-stroke keeps it legible over every face.
+    for ring in _natural_earth_land():
+        for segment in _orthographic_segments(ring, center, globe):
+            values = " ".join(f"{x:.1f},{y:.1f}" for x, y in segment)
+            parts.append(
+                f'<polyline points="{values}" fill="none" stroke="#ffffff" '
+                'stroke-width="4.2" opacity="0.72" stroke-linejoin="round"/>'
+            )
+            parts.append(
+                f'<polyline points="{values}" fill="none" stroke="#20344c" '
+                'stroke-width="2.0" opacity="0.96" stroke-linejoin="round"/>'
+            )
+
+    # Label visible resolution-1 cells at their actual geographic centroids.
+    # Hidden cells and cells whose centroids sit effectively on the limb are
+    # left unlabeled rather than assigning them an arbitrary visible position.
+    for identifier in _cells_at_resolution(1):
+        latitude, longitude = rh.cell_to_centroid(identifier)
+        x, y, visibility = _orthographic(float(longitude), float(latitude), center)
+        if visibility <= 0.03:
+            continue
+        label_x = globe[0] + globe[2] * x
+        label_y = globe[1] - globe[2] * y
+        parts.append(
+            f'<text x="{label_x:.1f}" y="{label_y + 4:.1f}" fill="#0b1730" '
+            'stroke="#ffffff" stroke-width="2.4" paint-order="stroke" '
+            'text-anchor="middle" font-family="Inter,Segoe UI,Arial,sans-serif" '
+            f'font-size="12" font-weight="800">{identifier}</text>'
+        )
+
+    parts += [
+        '<text x="95" y="215" fill="#ffffff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="72" font-weight="760">rHEALPix DGGS</text>',
+        '<text x="98" y="280" fill="#9fd9d0" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="34" font-weight="650">Rust core · Python first</text>',
+        '<text x="100" y="345" fill="#c7d5e5" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="22">Hierarchical equal-area cells across the whole globe</text>',
+        '<text x="100" y="380" fill="#c7d5e5" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="22">with continuous topology across seams and ±180°</text>',
+    ]
+    pills = [("6 faces", 100), ("54 cells at resolution 1", 245), ("aperture 9", 520)]
+    for label, x in pills:
+        width = 120 if label != "54 cells at resolution 1" else 245
+        parts.append(f'<rect x="{x}" y="430" width="{width}" height="46" rx="23" fill="#17294a" stroke="#5d7495"/>')
+        parts.append(f'<text x="{x + width / 2}" y="460" fill="#f4f8fc" text-anchor="middle" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16" font-weight="650">{label}</text>')
+    parts += [
+        '<text x="100" y="760" fill="#8299b7" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16">Actual WGS84 resolution-1 cell boundaries · orthographic view centred at 170°E, 22°S</text>',
+        '<text x="100" y="792" fill="#8299b7" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16">Generated reproducibly from the public rhealpixdggs Python API</text>',
+    ]
+    return svg(1600, 900, "\n".join(parts), "Resolution-one rHEALPix cells rendered on an orthographic globe")
 
 
 def projection_hierarchy() -> str:
@@ -463,6 +703,7 @@ def grid_traversal() -> str:
 
 
 FIGURES: Dict[str, Callable[[], str]] = {
+    "cover-globe.svg": cover_globe,
     "projected-grid.svg": projected_grid,
     "projection-hierarchy.svg": projection_hierarchy,
     "geographic-faces.svg": geographic_faces,
