@@ -1,0 +1,26 @@
+---
+title: Recipes
+description: Complete GIS workflows using the Python API.
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Recipes are complete workflows that connect the core grid API to real data and
+common geospatial tools.
+
+<CardGrid>
+  <LinkCard
+    title="Waka Kotahi CAS crash density"
+    description="Query public NZ crash points, aggregate equal-area density, map two resolutions, and export a GeoPackage."
+    href="/rhealpixdggs-rs/recipes/cas-crash-density/"
+  />
+  <LinkCard
+    title="Polygon to GeoPackage"
+    description="Convert polygon data into centroid or touch-all rHEALPix coverage from Python or the command line."
+    href="/rhealpixdggs-rs/guides/polygon-to-gpkg/"
+  />
+</CardGrid>
+
+Good recipe contributions should use public or easily substituted data,
+describe coordinate order and resolution choice, produce a useful artifact,
+and call the public library API wherever possible.

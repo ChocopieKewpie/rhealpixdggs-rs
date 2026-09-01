@@ -1,0 +1,17 @@
+{
+  "name": "rhealpixdggs-rs-docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro check && astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/check": "0.9.8",
+    "@astrojs/starlight": "0.41.10",
+    "astro": "7.2.10",
+    "sharp": "0.35.4",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,135 @@
+---
+title: Fast global grid for Rust and Python
+description: Fast aperture-9 global grid indexing, coverage, and topology for Rust and Python.
+template: splash
+hero:
+  title: A global grid built for real geospatial work.
+  tagline: Index coordinates, cover polygons, traverse seams, and store stable hierarchical cell IDs through a fast Rust core and a Python-first API.
+  image:
+    file: ../../../docs/images/cover-globe.svg
+    alt: Resolution-1 rHEALPix cells rendered and labelled on a globe
+  actions:
+    - text: Start with Python
+      link: /rhealpixdggs-rs/getting-started/python/
+      icon: right-arrow
+    - text: Browse the API
+      link: /rhealpixdggs-rs/api/
+      variant: secondary
+      icon: open-book
+---
+
+import { Aside, Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+<div class="rhp-kicker">rHEALPix for Rust and Python</div>
+
+<div class="rhp-metrics">
+  <div class="rhp-metric"><strong>6 faces</strong><span>global root grid</span></div>
+  <div class="rhp-metric"><strong>3 × 3</strong><span>aperture-9 children</span></div>
+  <div class="rhp-metric"><strong>0–15</strong><span>supported resolutions</span></div>
+  <div class="rhp-metric"><strong>u64</strong><span>stable storage IDs</span></div>
+</div>
+
+## Work by task
+
+Choose the shortest path to the operation you need. Every section uses the
+actual public API and the same coordinate conventions as the implementation.
+
+<CardGrid>
+  <Card title="Index spatial data" icon="rocket">
+    Convert one coordinate—or millions of NumPy coordinates—into canonical cell
+    strings or compact integer IDs. [Open indexing →](/rhealpixdggs-rs/api/indexing/)
+  </Card>
+  <Card title="Cover regions" icon="puzzle">
+    Fill polygons by centroid membership or select every cell that touches the
+    geometry. [Compare coverage modes →](/rhealpixdggs-rs/concepts/coverage/)
+  </Card>
+  <Card title="Traverse continuously" icon="code-branch">
+    Walk neighbours, disks, and rings across face seams, polar rotations, and
+    the antimeridian. [Explore topology →](/rhealpixdggs-rs/api/topology/)
+  </Card>
+  <Card title="Store stable IDs" icon="database">
+    Convert canonical strings losslessly to deterministic `u64` values for
+    databases, Arrow, and Parquet. [Understand IDs →](/rhealpixdggs-rs/concepts/cell-ids/)
+  </Card>
+</CardGrid>
+
+## One hierarchy, two fast APIs
+
+Every location belongs to one cell at a chosen resolution. Six root faces—`N`,
+`O`, `P`, `Q`, `R`, and `S`—subdivide recursively into 3×3 groups. A canonical
+identifier such as `R88756047` records the complete path through that hierarchy.
+
+The projection is square-cell based in planar space, but its geographic
+boundaries curve on the ellipsoid. Near the poles, inverse projection produces
+caps, darts, and skew quadrilaterals. The library handles these shapes as part
+of the grid instead of treating them as exceptional GIS features.
+
+<LinkCard
+  title="See how the six faces and polar cells fit together"
+  description="Projection layout, hierarchy, geographic shapes, and seam topology."
+  href="/rhealpixdggs-rs/concepts/grid/"
+/>
+
+## A first cell
+
+```python
+import rhealpixdggs as rh
+
+cell = rh.latlng_to_cell(-40.356, 175.611, resolution=8)
+print(cell)                       # R88756047
+print(rh.str_to_int(cell))        # stable integer form
+print(rh.cell_to_neighbors(cell, plane=False))
+```
+
+<Aside type="caution" title="Coordinate order">
+  The H3-style Python API uses `(latitude, longitude)`. The Rust API and the
+  upstream-compatible object facade use `(longitude, latitude)`. Each API page
+  states its convention explicitly.
+</Aside>
+
+## See it on real data
+
+The worked Waka Kotahi Crash Analysis System recipe indexes 2,520 Wellington
+Region crashes from 2024, aggregates the records into equal-area cells, and
+exports analysis-ready GeoPackages.
+
+<div class="rhp-map-pair">
+  <figure>
+    <img src="/rhealpixdggs-rs/images/wellington-cas-2024-r8.png" alt="Wellington CAS crash density at rHEALPix resolution 8" />
+    <figcaption>Resolution 8 · regional pattern</figcaption>
+  </figure>
+  <figure>
+    <img src="/rhealpixdggs-rs/images/wellington-cas-2024-r9.png" alt="Wellington CAS crash density at rHEALPix resolution 9" />
+    <figcaption>Resolution 9 · local detail</figcaption>
+  </figure>
+</div>
+
+<LinkCard
+  title="Build the Waka Kotahi CAS crash-density map"
+  description="Download, index, aggregate, map, and export the public crash records."
+  href="/rhealpixdggs-rs/recipes/cas-crash-density/"
+/>
+
+## Continue from here
+
+<CardGrid>
+  <Card title="Install" icon="download">
+    Choose wheels, a source checkout, or the reproducible conda development
+    environment. [Installation →](/rhealpixdggs-rs/getting-started/installation/)
+  </Card>
+  <Card title="Build with Python" icon="rocket">
+    Index points, inspect geometry, traverse cells, and use the NumPy API.
+    [Python quickstart →](/rhealpixdggs-rs/getting-started/python/)
+  </Card>
+  <Card title="Build with Rust" icon="window">
+    Use `RhealpixDggs`, `CellId`, coverage, and topology from the core crate.
+    [Rust quickstart →](/rhealpixdggs-rs/getting-started/rust/)
+  </Card>
+  <Card title="Look up a function" icon="magnifier">
+    Browse the complete Python and Rust surface by task and module.
+    [API reference →](/rhealpixdggs-rs/api/)
+  </Card>
+</CardGrid>
+
+Version 0.10.1 is pre-1.0. The WGS84 aperture-9 surface is extensively tested
+against versioned upstream corpora, but API stability is not yet guaranteed.

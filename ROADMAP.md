@@ -30,7 +30,7 @@ other languages.
 Exit criterion met: documented supported calls match upstream IDs and
 numerical outputs within explicit error budgets over generated point,
 boundary, antimeridian, polar, traversal, coverage, and facade fixtures. See
-[`docs/UPSTREAM_COMPATIBILITY.md`](docs/UPSTREAM_COMPATIBILITY.md).
+[`upstream-compatibility.md`](src/content/docs/engineering/upstream-compatibility.md).
 
 ## M2 — Performance API (macOS measurement deferred)
 

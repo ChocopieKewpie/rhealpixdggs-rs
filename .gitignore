@@ -1,5 +1,7 @@
 /target/
 /.venv/
+/.astro/
+/node_modules/
 /.pytest_cache/
 /.maturin/
 __pycache__/
@@ -10,6 +12,5 @@ __pycache__/
 *.pyd
 dist/
 build/
-site/
 *.gpkg
 benchmark-results*/

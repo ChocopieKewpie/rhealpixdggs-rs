@@ -198,18 +198,19 @@ hardware, commands, raw results, and limitations.
 
 ## Documentation
 
-- [Documentation site source](docs/index.md) — concepts, quickstarts, recipes,
-  and the complete task-oriented API reference
-- [API and implementation status](docs/API_STATUS.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Development and figure regeneration](docs/DEVELOPMENT.md)
-- [Numerical accuracy](docs/NUMERICAL_ACCURACY.md)
-- [Upstream compatibility](docs/UPSTREAM_COMPATIBILITY.md)
-- [Upstream v0.7 issue audit](docs/UPSTREAM_V0_7_AUDIT.md)
+- [Documentation site](https://chocopiekewpie.github.io/rhealpixdggs-rs/) —
+  concepts, quickstarts, recipes, and the complete task-oriented API reference
+- [Documentation source](src/content/docs/index.mdx)
+- [API and implementation status](src/content/docs/engineering/api-status.md)
+- [Architecture](src/content/docs/engineering/architecture.md)
+- [Development and figure regeneration](src/content/docs/engineering/development.md)
+- [Numerical accuracy](src/content/docs/engineering/numerical-accuracy.md)
+- [Upstream compatibility](src/content/docs/engineering/upstream-compatibility.md)
+- [Upstream v0.7 issue audit](src/content/docs/engineering/upstream-v0-7-audit.md)
 - [Roadmap](ROADMAP.md)
 
-Build the documentation locally with `python -m pip install -r
-docs-requirements.txt` followed by `mkdocs serve`.
+Build the Starlight documentation locally with `npm install` followed by
+`npm run dev`. Use `npm run build` for the checked production build.
 
 Version 0.10.1 is pre-1.0. The WGS84 aperture-9 surface is extensively tested
 against versioned upstream corpora; custom apertures and complete drop-in

@@ -35,7 +35,7 @@ def exported_names(path: Path) -> set[str]:
 
 def documented_names() -> set[str]:
     result: set[str] = set()
-    for path in (ROOT / "docs" / "api").glob("*.md"):
+    for path in (ROOT / "src" / "content" / "docs" / "api").glob("*.md"):
         for heading in HEADING.findall(path.read_text(encoding="utf-8")):
             result.add(heading.rsplit(".", 1)[-1])
     return result
@@ -53,4 +53,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
