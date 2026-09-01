@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
 import rhealpixdggs as rh
@@ -35,3 +37,19 @@ def test_numpy_quickstart_shapes() -> None:
     assert cells.dtype == np.dtype("uint64")
     assert boundaries.shape == (3, 28, 2)
 
+
+def test_documentation_assets_exist() -> None:
+    root = Path(__file__).parents[2]
+    for name in (
+        "logo-mark.svg",
+        "cover-globe.svg",
+        "wellington-cas-2024-r8.png",
+        "wellington-cas-2024-r9.png",
+    ):
+        path = root / "docs" / "images" / name
+        assert path.is_file(), f"missing documentation asset: {path}"
+        assert path.stat().st_size > 100
+
+    coastline = root / "docs" / "data" / "ne_10m_nz_land.geojson"
+    assert coastline.is_file()
+    assert coastline.stat().st_size > 100_000

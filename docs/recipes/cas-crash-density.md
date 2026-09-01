@@ -20,6 +20,36 @@ Resolution 8 is a useful regional overview: every cell covers approximately
 1.975 km². Use resolution 9 (~0.219 km²) for a more local view, remembering
 that sparse cells become more sensitive to individual records.
 
+## Example output at resolutions 8 and 9
+
+The live public layer returned 2,520 located crash records for this Wellington
+Region 2024 query. Both maps below come from the complete example script. The
+GeoPackages retain every record; the documentation maps use a robust regional
+viewport so a remotely located source record does not compress the Wellington
+cells into an unreadable corner. Each map caps its colour scale at its own 99th
+percentile, so use the legend in each panel rather than comparing colours
+directly between resolutions.
+
+<div class="rhp-map-grid" markdown>
+
+<figure markdown>
+
+[![Wellington CAS crash density in resolution-8 rHEALPix cells](../images/wellington-cas-2024-r8.png)](../images/wellington-cas-2024-r8.png)
+
+<figcaption><strong>Resolution 8.</strong> 399 occupied cells; each cell is approximately 1.975 km². Click for the full-size map.</figcaption>
+
+</figure>
+
+<figure markdown>
+
+[![Wellington CAS crash density in resolution-9 rHEALPix cells](../images/wellington-cas-2024-r9.png)](../images/wellington-cas-2024-r9.png)
+
+<figcaption><strong>Resolution 9.</strong> 1,012 occupied cells; each cell is approximately 0.219 km². Click for the full-size map.</figcaption>
+
+</figure>
+
+</div>
+
 ## Install dependencies
 
 ```bash
@@ -183,6 +213,11 @@ plt.tight_layout()
 plt.savefig("wellington-cas-r8.png", dpi=200, bbox_inches="tight")
 ```
 
+The bundled `save_plot()` helper also adds the higher-detail Natural Earth
+1:10 million New Zealand land outline and uses a robust viewport for regional
+data. The shorter snippet above is useful when you want complete control over
+the Matplotlib figure.
+
 ## Run the complete example
 
 The repository includes the full script with year, region, resolution, output,
@@ -196,6 +231,9 @@ python examples/cas_crash_density.py \
   --output wellington-cas-r8.gpkg \
   --plot wellington-cas-r8.png
 ```
+
+Repeat with `--resolution 9`, `--output wellington-cas-r9.gpkg`, and
+`--plot wellington-cas-r9.png` to create the finer map.
 
 ## Interpretation and limitations
 

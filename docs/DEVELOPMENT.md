@@ -63,6 +63,23 @@ runs `mkdocs build --strict` for pull requests and deploys `main` to GitHub
 Pages. `tools/check_documented_python_api.py` requires every name exported from
 the top-level, NumPy, and GeoPandas modules to have a reference-page heading.
 
+The CAS recipe maps are live-data examples. Regenerate them from the repository
+root after building the Python extension and installing the `geo` dependencies:
+
+```bash
+python examples/cas_crash_density.py --year 2024 --region "Wellington Region" \
+  --resolution 8 --output wellington-cas-r8.gpkg \
+  --plot docs/images/wellington-cas-2024-r8.png
+
+python examples/cas_crash_density.py --year 2024 --region "Wellington Region" \
+  --resolution 9 --output wellington-cas-r9.gpkg \
+  --plot docs/images/wellington-cas-2024-r9.png
+```
+
+GeoPackages are ignored by Git; only the finished documentation PNGs are
+committed. Counts can change when Waka Kotahi corrects or extends the public
+CAS layer.
+
 ## Conformance corpora
 
 The immutable `tests/fixtures/rhealpixdggs-py-0.6.0` corpora record source

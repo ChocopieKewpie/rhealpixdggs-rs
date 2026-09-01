@@ -7,6 +7,8 @@
   --rhp-gold: #d19b24;
   --rhp-teal: #2a9d8f;
   --rhp-blue: #4c78a8;
+  --rhp-border: #d9e2ec;
+  --rhp-surface: #f7f9fc;
 }
 
 [data-md-color-scheme="slate"] {
@@ -14,34 +16,95 @@
   --md-default-bg-color--light: #10223f;
   --md-code-bg-color: #101f38;
   --md-typeset-a-color: #65cfc3;
+  --rhp-border: #2b4160;
+  --rhp-surface: #10223f;
 }
 
-.md-header,
-.md-tabs {
+body {
+  font-family:
+    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+code,
+kbd,
+pre {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.md-grid {
+  max-width: 90rem;
+}
+
+.md-header {
   background: linear-gradient(110deg, #0b1730 0%, #173c5e 72%, #176b6d 100%);
 }
 
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
+  width: 2rem;
+  height: 2rem;
+}
+
+.md-header__title {
+  font-weight: 700;
+}
+
+.md-content__inner {
+  max-width: 62rem;
+  margin-right: auto;
+  margin-left: auto;
+  padding-bottom: 2rem;
+}
+
+.md-sidebar {
+  padding-top: 0.8rem;
+}
+
+.md-nav__link--active {
+  font-weight: 700;
+}
+
+.md-typeset {
+  line-height: 1.65;
+}
+
 .md-typeset h1 {
-  font-weight: 750;
+  margin-bottom: 1rem;
+  font-weight: 760;
   letter-spacing: -0.03em;
 }
 
 .md-typeset h2 {
-  font-weight: 680;
+  margin-top: 2.1rem;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+}
+
+.md-typeset h3 {
+  margin-top: 1.6rem;
+}
+
+.md-typeset img {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 
 .rhp-hero {
-  margin: -0.4rem 0 1.8rem;
-  padding: 2rem 2.2rem;
-  border: 1px solid color-mix(in srgb, var(--rhp-blue), transparent 62%);
-  border-radius: 1rem;
+  margin: 0 0 1.8rem;
+  padding: 2rem 2.1rem;
+  border: 1px solid var(--rhp-border);
+  border-left: 0.35rem solid var(--rhp-teal);
+  border-radius: 0.75rem;
   background:
-    radial-gradient(circle at 92% 12%, rgba(42, 157, 143, 0.24), transparent 36%),
-    linear-gradient(135deg, rgba(76, 120, 168, 0.15), rgba(11, 23, 48, 0.02));
+    radial-gradient(circle at 94% 10%, rgba(42, 157, 143, 0.17), transparent 33%),
+    var(--rhp-surface);
 }
 
 .rhp-hero h1 {
   margin: 0 0 0.4rem;
+  color: var(--md-default-fg-color);
   font-size: clamp(2rem, 5vw, 3.4rem);
 }
 
@@ -59,20 +122,73 @@
 
 .rhp-badge {
   padding: 0.34rem 0.7rem;
-  border: 1px solid rgba(76, 120, 168, 0.55);
+  border: 1px solid var(--rhp-border);
   border-radius: 999px;
   font-size: 0.78rem;
   font-weight: 700;
+  background: var(--md-default-bg-color);
+}
+
+.rhp-cover {
+  max-width: 60rem;
+  margin: 0 auto 2.4rem;
+  padding: 0;
+}
+
+.rhp-cover img {
+  width: 100%;
+  border: 1px solid var(--rhp-border);
+  border-radius: 0.75rem;
+  background: var(--rhp-surface);
 }
 
 .md-typeset .grid.cards > ul > li {
-  border-radius: 0.8rem;
-  transition: border-color 120ms ease, transform 120ms ease;
+  border-color: var(--rhp-border);
+  border-radius: 0.65rem;
+  box-shadow: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 .md-typeset .grid.cards > ul > li:hover {
   border-color: var(--rhp-teal);
-  transform: translateY(-2px);
+  box-shadow: 0 0.35rem 1rem rgba(11, 23, 48, 0.08);
+}
+
+.rhp-map-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.2rem 0 1.8rem;
+}
+
+.rhp-map-grid figure {
+  min-width: 0;
+  margin: 0;
+  padding: 0.65rem;
+  border: 1px solid var(--rhp-border);
+  border-radius: 0.65rem;
+  background: var(--rhp-surface);
+}
+
+.rhp-map-grid figure img {
+  width: 100%;
+  border-radius: 0.35rem;
+}
+
+.rhp-map-grid figcaption {
+  padding: 0.6rem 0.2rem 0.15rem;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.md-typeset table:not([class]) {
+  display: table;
+  width: 100%;
+}
+
+.md-typeset pre > code {
+  white-space: pre;
 }
 
 .api-signature {
@@ -83,3 +199,39 @@
   border-left-color: var(--rhp-coral) !important;
 }
 
+@media screen and (max-width: 52rem) {
+  .rhp-hero {
+    padding: 1.35rem 1.2rem;
+  }
+
+  .rhp-hero h1 {
+    font-size: 2rem;
+  }
+
+  .rhp-map-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .md-typeset .highlight {
+    margin-right: 0;
+    margin-left: 0;
+    overflow: hidden;
+  }
+
+  .md-typeset .highlight pre,
+  .md-typeset .highlight code {
+    box-sizing: border-box;
+    max-width: 100%;
+  }
+
+  .md-typeset .highlight pre {
+    width: 100%;
+  }
+
+  .md-typeset :not(pre) > code {
+    padding-right: 0.1em;
+    padding-left: 0.1em;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+}

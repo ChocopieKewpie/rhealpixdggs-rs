@@ -11,9 +11,9 @@ theme:
   language: en
   logo: images/logo-mark.svg
   favicon: images/logo-mark.svg
-  font:
-    text: Inter
-    code: JetBrains Mono
+  font: false
+  icon:
+    repo: fontawesome/brands/github
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -30,15 +30,15 @@ theme:
         icon: material/weather-sunny
         name: Use light theme
   features:
-    - navigation.tabs
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
     - navigation.sections
     - navigation.indexes
     - navigation.top
     - navigation.footer
-    - navigation.path
     - toc.follow
     - search.highlight
-    - search.share
     - content.code.copy
     - content.tabs.link
 
@@ -86,6 +86,9 @@ markdown_extensions:
   - toc:
       permalink: true
   - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.highlight:
       anchor_linenums: true
       line_spans: __span

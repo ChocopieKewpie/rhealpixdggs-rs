@@ -25,7 +25,11 @@ topology across polar folds, face seams, and the antimeridian.
 
 </div>
 
+<figure class="rhp-cover" markdown>
+
 ![Resolution-1 rHEALPix cells labelled on an orthographic globe](images/cover-globe.svg)
+
+</figure>
 
 ## What rHEALPix gives you
 
@@ -96,4 +100,3 @@ print(rh.cell_to_neighbors(cell, plane=False))
 
 Version 0.10.1 is pre-1.0. The WGS84 aperture-9 surface is extensively tested
 against versioned upstream corpora, but API stability is not yet guaranteed.
-
