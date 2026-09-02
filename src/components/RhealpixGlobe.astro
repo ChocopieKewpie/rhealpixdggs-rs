@@ -1,0 +1,359 @@
+---
+const base = import.meta.env.BASE_URL.endsWith('/')
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
+const cellsPath = `${base}data/rhealpix-land-r5-compacted.geojson`;
+const rawGridPath = `${base}data/rhealpix-land-r5-uncompacted-grid.geojson`;
+const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
+---
+
+<div
+  class="rhp-globe"
+  data-rhp-globe
+  data-cells={cellsPath}
+  data-raw-grid={rawGridPath}
+  data-coasts={coastsPath}
+  data-mode="compacted"
+>
+  <div
+    class="rhp-globe__map"
+    data-rhp-globe-map
+    role="region"
+    aria-label="Interactive globe comparing compacted and uncompacted resolution-5 rHEALPix land coverage"
+  ></div>
+  <div class="rhp-globe__loading" data-rhp-globe-status>Preparing the global grid…</div>
+  <div class="rhp-globe__hint" data-rhp-globe-hint>
+    Drag to rotate · scroll or pinch to zoom · select a compacted cell to inspect it
+  </div>
+  <div class="rhp-globe__toolbar">
+    <div class="rhp-globe__toggle" role="group" aria-label="Land-grid representation">
+      <button type="button" aria-pressed="true" data-rhp-globe-mode="compacted">
+        Compacted
+      </button>
+      <button type="button" aria-pressed="false" data-rhp-globe-mode="uncompacted">
+        Uncompacted r5
+      </button>
+    </div>
+    <div
+      class="rhp-globe__legend"
+      data-rhp-globe-compact-legend
+      aria-label="Compacted cell resolution colours"
+    >
+      <span>Stored resolution</span>
+      <ol>
+        <li><i style="--swatch: #efb366"></i>1</li>
+        <li><i style="--swatch: #e7955d"></i>2</li>
+        <li><i style="--swatch: #d46f68"></i>3</li>
+        <li><i style="--swatch: #9e668f"></i>4</li>
+        <li><i style="--swatch: #46b9ad"></i>5</li>
+      </ol>
+    </div>
+    <div class="rhp-globe__raw-summary" data-rhp-globe-raw-summary hidden>
+      <strong>109,396</strong>
+      <span>resolution-5 cells</span>
+    </div>
+  </div>
+  <noscript>
+    <p class="rhp-globe__fallback">Enable JavaScript to explore the interactive globe.</p>
+  </noscript>
+</div>
+
+<script>
+  import * as maplibregl from 'maplibre-gl';
+
+  const activeGlobes = new WeakMap<HTMLElement, maplibregl.Map>();
+
+  function popupContent(cell: unknown, resolution: unknown): HTMLElement {
+    const content = document.createElement('div');
+    content.className = 'rhp-globe-popup';
+
+    const label = document.createElement('span');
+    label.textContent = 'rHEALPix cell';
+    const identifier = document.createElement('strong');
+    identifier.textContent = String(cell ?? 'Unknown');
+    const detail = document.createElement('small');
+    detail.textContent = `Compacted at resolution ${String(resolution ?? '—')}`;
+
+    content.append(label, identifier, detail);
+    return content;
+  }
+
+  function initialiseGlobe(root: HTMLElement): void {
+    if (activeGlobes.has(root)) return;
+
+    const container = root.querySelector<HTMLElement>('[data-rhp-globe-map]');
+    const status = root.querySelector<HTMLElement>('[data-rhp-globe-status]');
+    const hint = root.querySelector<HTMLElement>('[data-rhp-globe-hint]');
+    const compactLegend = root.querySelector<HTMLElement>(
+      '[data-rhp-globe-compact-legend]',
+    );
+    const rawSummary = root.querySelector<HTMLElement>('[data-rhp-globe-raw-summary]');
+    const modeButtons = root.querySelectorAll<HTMLButtonElement>('[data-rhp-globe-mode]');
+    const cells = root.dataset.cells;
+    const rawGrid = root.dataset.rawGrid;
+    const coasts = root.dataset.coasts;
+    if (!container || !cells || !rawGrid || !coasts) return;
+    const rawGridUrl = rawGrid;
+
+    try {
+      const map = new maplibregl.Map({
+        container,
+        center: [168, -24],
+        zoom: 0.65,
+        minZoom: 0,
+        maxZoom: 6,
+        pitch: 0,
+        attributionControl: false,
+        canvasContextAttributes: { antialias: true },
+        style: {
+          version: 8,
+          projection: { type: 'globe' },
+          sky: {
+            'atmosphere-blend': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              0,
+              1,
+              5,
+              0.8,
+              7,
+              0,
+            ],
+          },
+          light: {
+            anchor: 'map',
+            color: '#e7f7ff',
+            intensity: 0.4,
+            position: [1.5, 90, 65],
+          },
+          sources: {
+            landCells: { type: 'geojson', data: cells },
+            coastlines: { type: 'geojson', data: coasts },
+          },
+          layers: [
+            {
+              id: 'ocean',
+              type: 'background',
+              paint: { 'background-color': '#102b45' },
+            },
+            {
+              id: 'land-cell-fill',
+              type: 'fill',
+              source: 'landCells',
+              paint: {
+                'fill-color': [
+                  'match',
+                  ['get', 'resolution'],
+                  1,
+                  '#efb366',
+                  2,
+                  '#e7955d',
+                  3,
+                  '#d46f68',
+                  4,
+                  '#9e668f',
+                  5,
+                  '#46b9ad',
+                  '#46b9ad',
+                ],
+                'fill-opacity': 0.79,
+              },
+            },
+            {
+              id: 'land-cell-grid',
+              type: 'line',
+              source: 'landCells',
+              paint: {
+                'line-color': '#ecfbff',
+                'line-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.32, 3, 0.68],
+                'line-width': ['interpolate', ['linear'], ['zoom'], 0, 0.45, 3, 1.05],
+              },
+            },
+            {
+              id: 'coastline',
+              type: 'line',
+              source: 'coastlines',
+              paint: {
+                'line-color': '#f7fcff',
+                'line-opacity': 0.9,
+                'line-width': ['interpolate', ['linear'], ['zoom'], 0, 0.8, 3, 1.7],
+              },
+            },
+          ],
+        },
+      });
+
+      activeGlobes.set(root, map);
+      map.addControl(
+        new maplibregl.NavigationControl({ showCompass: true, showZoom: true }),
+        'top-right',
+      );
+      map.addControl(new maplibregl.GlobeControl(), 'top-right');
+      map.addControl(
+        new maplibregl.AttributionControl({
+          compact: true,
+          customAttribution: 'Grid: rhealpixdggs · Coastline: Natural Earth',
+        }),
+        'bottom-right',
+      );
+
+      let rawGridPending = false;
+
+      function setMode(mode: 'compacted' | 'uncompacted'): void {
+        const compacted = mode === 'compacted';
+        root.dataset.mode = mode;
+        modeButtons.forEach((button) => {
+          button.setAttribute(
+            'aria-pressed',
+            String(button.dataset.rhpGlobeMode === mode),
+          );
+        });
+        if (compactLegend) compactLegend.hidden = !compacted;
+        if (rawSummary) rawSummary.hidden = compacted;
+        if (hint) {
+          hint.textContent = compacted
+            ? 'Drag to rotate · scroll or pinch to zoom · select a compacted cell to inspect it'
+            : 'Drag to rotate · zoom in to reveal the complete resolution-5 grid';
+        }
+
+        map.setLayoutProperty(
+          'land-cell-grid',
+          'visibility',
+          compacted ? 'visible' : 'none',
+        );
+        map.setPaintProperty(
+          'land-cell-fill',
+          'fill-opacity',
+          compacted ? 0.79 : 0.62,
+        );
+        map.setPaintProperty(
+          'land-cell-fill',
+          'fill-color',
+          compacted
+            ? [
+                'match',
+                ['get', 'resolution'],
+                1,
+                '#efb366',
+                2,
+                '#e7955d',
+                3,
+                '#d46f68',
+                4,
+                '#9e668f',
+                5,
+                '#46b9ad',
+                '#46b9ad',
+              ]
+            : '#46b9ad',
+        );
+
+        if (compacted) {
+          if (map.getLayer('uncompacted-grid')) {
+            map.setLayoutProperty('uncompacted-grid', 'visibility', 'none');
+          }
+          return;
+        }
+
+        if (map.getLayer('uncompacted-grid')) {
+          map.setLayoutProperty('uncompacted-grid', 'visibility', 'visible');
+          return;
+        }
+
+        rawGridPending = true;
+        if (status) {
+          status.textContent = 'Loading 109,396 resolution-5 cells…';
+          status.hidden = false;
+        }
+        map.addSource('uncompactedGrid', { type: 'geojson', data: rawGridUrl });
+        map.addLayer(
+          {
+            id: 'uncompacted-grid',
+            type: 'line',
+            source: 'uncompactedGrid',
+            paint: {
+              'line-color': '#eafcff',
+              'line-opacity': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                0,
+                0.08,
+                1.5,
+                0.3,
+                3,
+                0.72,
+              ],
+              'line-width': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                0,
+                0.2,
+                2,
+                0.55,
+                4,
+                1.05,
+              ],
+            },
+          },
+          'coastline',
+        );
+        map.once('idle', () => {
+          rawGridPending = false;
+          if (status) status.hidden = true;
+        });
+      }
+
+      map.on('load', () => {
+        root.classList.add('is-ready');
+        if (status) status.hidden = true;
+        modeButtons.forEach((button) => {
+          button.addEventListener('click', () => {
+            const mode = button.dataset.rhpGlobeMode;
+            if (mode === 'compacted' || mode === 'uncompacted') setMode(mode);
+          });
+        });
+      });
+      map.on('click', 'land-cell-fill', (event: maplibregl.MapLayerMouseEvent) => {
+        if (root.dataset.mode !== 'compacted') return;
+        const feature = event.features?.[0];
+        if (!feature) return;
+        const coordinates = event.lngLat;
+        new maplibregl.Popup({ closeButton: false, offset: 9 })
+          .setLngLat(coordinates)
+          .setDOMContent(
+            popupContent(feature.properties?.cell, feature.properties?.resolution),
+          )
+          .addTo(map);
+      });
+      map.on('mouseenter', 'land-cell-fill', () => {
+        map.getCanvas().style.cursor =
+          root.dataset.mode === 'compacted' ? 'pointer' : '';
+      });
+      map.on('mouseleave', 'land-cell-fill', () => {
+        map.getCanvas().style.cursor = '';
+      });
+      map.on('error', () => {
+        if (rawGridPending && status) {
+          rawGridPending = false;
+          status.textContent = 'The uncompacted grid could not be loaded.';
+          return;
+        }
+        if (!root.classList.contains('is-ready') && status) {
+          status.textContent = 'The interactive globe could not be loaded.';
+        }
+      });
+    } catch {
+      if (status) status.textContent = 'This browser cannot display the interactive globe.';
+    }
+  }
+
+  function initialiseGlobes(): void {
+    document.querySelectorAll<HTMLElement>('[data-rhp-globe]').forEach(initialiseGlobe);
+  }
+
+  initialiseGlobes();
+  document.addEventListener('astro:page-load', initialiseGlobes);
+</script>

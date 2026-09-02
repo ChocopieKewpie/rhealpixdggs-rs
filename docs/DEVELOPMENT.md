@@ -25,8 +25,10 @@ cargo check -p rhealpixdggs-python
 maturin develop --release
 python -m pytest
 python tools/generate_readme_figures.py --check
+python tools/generate_globe_data.py --check
 python tools/check_documented_python_api.py
-mkdocs build --strict
+npm ci
+npm run build
 ```
 
 The Rust toolchain is pinned in `rust-toolchain.toml`. The Python extension uses
@@ -49,19 +51,34 @@ The cover globe additionally reads the bundled public-domain Natural Earth
 1:110m land polygons documented in `docs/data/NATURAL_EARTH.md`; generation
 remains fully offline.
 
-## Documentation site
-
-The user guide and API reference are built with MkDocs Material:
+The interactive homepage globe uses the same Natural Earth source to create a
+resolution-5 land cover with `polygon_to_cells_intersects()`, compact complete
+sibling groups, and export the resulting geographic cell boundaries:
 
 ```bash
-python -m pip install -r docs-requirements.txt
-mkdocs serve
+python tools/generate_globe_data.py
+python tools/generate_globe_data.py --check
 ```
 
-Open `http://127.0.0.1:8000` for local live reload. The documentation workflow
-runs `mkdocs build --strict` for pull requests and deploys `main` to GitHub
-Pages. `tools/check_documented_python_api.py` requires every name exported from
-the top-level, NumPy, and GeoPandas modules to have a reference-page heading.
+The published site loads the committed static GeoJSON; it does not run polygon
+coverage in the browser. The larger, deduplicated uncompacted r5 edge grid is
+fetched only if a visitor selects that view.
+
+## Documentation site
+
+The user guide and API reference are built with Astro Starlight. Node.js 24 is
+used in CI:
+
+```bash
+npm install
+npm run dev
+```
+
+Open the URL printed by Astro for local live reload. Run `npm run build` before
+submitting documentation changes. The documentation workflow validates pull
+requests and deploys `main` to GitHub Pages with Astro's official action.
+`tools/check_documented_python_api.py` requires every name exported from the
+top-level, NumPy, and GeoPandas modules to have a reference-page heading.
 
 The CAS recipe maps are live-data examples. Regenerate them from the repository
 root after building the Python extension and installing the `geo` dependencies:

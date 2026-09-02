@@ -28,6 +28,7 @@ cargo check -p rhealpixdggs-python
 maturin develop --release
 python -m pytest
 python tools/generate_readme_figures.py --check
+python tools/generate_globe_data.py --check
 python tools/check_documented_python_api.py
 npm ci
 npm run build
@@ -53,6 +54,21 @@ The cover globe additionally reads the bundled public-domain Natural Earth
 1:110m land polygons documented in
 `src/content/docs/engineering/natural-earth-data.md`; generation
 remains fully offline.
+
+The interactive homepage globe uses the same Natural Earth source to create a
+resolution-5 land cover with `polygon_to_cells_intersects()`, compact complete
+sibling groups, and export the resulting geographic cell boundaries. Generate
+or verify its three committed GeoJSON assets with:
+
+```bash
+python tools/generate_globe_data.py
+python tools/generate_globe_data.py --check
+```
+
+This calculation is intentionally an offline documentation build step; the
+published page loads the finished compact cover and coastline without running
+polygon coverage in the browser. The larger, deduplicated uncompacted r5 edge
+grid is fetched only if a visitor selects that view.
 
 ## Documentation site
 

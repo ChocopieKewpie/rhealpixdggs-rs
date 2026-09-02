@@ -19,6 +19,7 @@ hero:
 ---
 
 import { Aside, Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import RhealpixGlobe from '../../components/RhealpixGlobe.astro';
 
 <div class="rhp-kicker">rHEALPix for Rust and Python</div>
 
@@ -28,6 +29,20 @@ import { Aside, Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
   <div class="rhp-metric"><strong>0–15</strong><span>supported resolutions</span></div>
   <div class="rhp-metric"><strong>u64</strong><span>stable storage IDs</span></div>
 </div>
+
+## The continents, expressed as cells
+
+This globe starts with every resolution-5 cell that touches Natural Earth land,
+then losslessly compacts complete groups of nine siblings into their parents.
+Colour shows the stored resolution after compaction; the bright line follows
+the source coastline. Toggle the complete resolution-5 grid to see what
+compaction removes, or select a cell in the compacted view to inspect its ID.
+
+<RhealpixGlobe />
+
+The map is self-contained: its GeoJSON is generated with the public
+`polygon_to_cells_intersects()`, `compact_cells()`, and cell-boundary APIs. It
+does not depend on an external basemap or access token.
 
 ## Work by task
 

@@ -13,6 +13,7 @@
     "@astrojs/starlight": "0.41.10",
     "astro": "7.2.10",
     "katex": "0.18.5",
+    "maplibre-gl": "6.6.0",
     "rehype-katex": "7.0.1",
     "remark-math": "6.0.0",
     "sharp": "0.35.4",

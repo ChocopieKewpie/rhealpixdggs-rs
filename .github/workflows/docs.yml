@@ -12,6 +12,7 @@ on:
       - "tsconfig.json"
       - "examples/cas_crash_density.py"
       - "tools/check_documented_python_api.py"
+      - "tools/generate_globe_data.py"
       - ".github/workflows/docs.yml"
   pull_request:
     paths:
@@ -23,6 +24,7 @@ on:
       - "tsconfig.json"
       - "examples/cas_crash_density.py"
       - "tools/check_documented_python_api.py"
+      - "tools/generate_globe_data.py"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 

@@ -1,8 +1,9 @@
 # Natural Earth land outlines
 
 `ne_110m_land.shp` is the Natural Earth 1:110 million land polygon dataset,
-version 4.0.0. It is bundled solely to generate the continent outlines in the
-README globe cover without network access or optional GIS dependencies.
+version 4.1.0. It is bundled to generate the continent outlines in the README
+cover and the static data behind the interactive documentation globe without
+network access or optional GIS dependencies.
 
 Natural Earth is a public-domain map dataset created by volunteers and
 supported by the North American Cartographic Information Society. The source
@@ -10,8 +11,13 @@ was accessed on 2026-08-31 from:
 
 https://www.naturalearthdata.com/downloads/110m-physical-vectors/110m-land/
 
-The figure generator contains a small, read-only parser for the polygon records
-in this shapefile. The DBF attributes and spatial index are not required.
+The figure and globe-data generators contain small, read-only parsers for the
+polygon records in this shapefile. The DBF attributes and spatial index are not
+required. `rhealpix-land-r5-compacted.geojson` contains the resolution-5
+intersects cover after lossless sibling compaction;
+`rhealpix-land-r5-uncompacted-grid.geojson` contains the deduplicated boundary
+edges of its exact resolution-5 expansion; and
+`natural-earth-coastlines-110m.geojson` contains its reference coastline.
 
 `ne_10m_nz_land.geojson` is a New Zealand-only extract of the Natural Earth
 1:10 million land polygon dataset, version 5.1.1. It retains the source
