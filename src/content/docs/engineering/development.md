@@ -72,8 +72,9 @@ The tile build uses an installed `tippecanoe`, or a pinned Tippecanoe Node
 wrapper when `npx` is available. It creates a compact land/coast archive and a
 separate uncompacted-grid archive. The published page range-loads only visible
 tiles, never runs polygon coverage in the browser, and does not contact the
-larger grid archive until a visitor selects that view. MapLibre itself is
-loaded only when the globe is close to the viewport.
+larger grid archive until a visitor selects that view. The homepage starts
+MapLibre immediately so the globe controls and progressively streamed compact
+view are available without depending on an intersection or map-wide idle event.
 
 The default—and cheapest—production setup is the existing GitHub Pages
 deployment. The two `.pmtiles` files are copied from `docs/data/` into the

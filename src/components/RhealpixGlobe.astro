@@ -69,7 +69,7 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
   };
 
   const activeGlobes = new WeakMap<HTMLElement, import('maplibre-gl').Map>();
-  const queuedGlobes = new WeakSet<HTMLElement>();
+  const initialisingGlobes = new WeakSet<HTMLElement>();
   let librariesPromise: Promise<MapLibraries> | undefined;
 
   function loadMapLibraries(): Promise<MapLibraries> {
@@ -176,6 +176,16 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
       });
 
       activeGlobes.set(root, map);
+
+      // MapLibre's global `idle` event waits for every requested tile and
+      // animation to settle. A globe may therefore be usable well before
+      // `idle` fires (and continuous interaction can postpone it indefinitely).
+      // Reveal the working map independently from background tile streaming.
+      function revealMap(): void {
+        root.classList.add('is-ready');
+        if (status) status.hidden = true;
+      }
+
       map.addControl(
         new maplibregl.NavigationControl({ showCompass: true, showZoom: true }),
         'top-right',
@@ -368,9 +378,10 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
           },
           'coastline',
         );
-        map.once('idle', () => {
-          if (status) status.hidden = true;
-        });
+        // registration completes the UI transition while visible PMTiles
+        // continue to arrive and render in the background.
+        map.once('render', revealMap);
+        window.setTimeout(revealMap, 1_500);
       }
 
       function setMode(mode: 'compacted' | 'uncompacted'): void {
@@ -434,7 +445,6 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
       }
 
       map.on('load', () => {
-        root.classList.add('is-ready');
         addTileLayers();
         modeButtons.forEach((button) => {
           button.addEventListener('click', () => {
@@ -458,9 +468,10 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
         map.on('mouseleave', 'polar-compact-fill', () => {
           map.getCanvas().style.cursor = '';
         });
-        map.once('idle', () => {
-          if (status) status.hidden = true;
-        });
+        // Do not wait for the map-wide `idle` event. Once the sources and
+        // layers are registered the globe is interactive and MapLibre can
+        // progressively paint each visible tile.
+        revealMap();
       });
       map.on('error', (event) => {
         if (status) {
@@ -469,27 +480,19 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
         }
         console.error('rHEALPix globe:', event.error);
       });
-    } catch {
+    } catch (error) {
       if (status) status.textContent = 'This browser cannot display the interactive globe.';
+      console.error('rHEALPix globe initialisation:', error);
     }
   }
 
-  const globeObserver = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        globeObserver.unobserve(entry.target);
-        void initialiseGlobe(entry.target as HTMLElement);
-      }
-    },
-    { rootMargin: '320px 0px' },
-  );
-
   function initialiseGlobes(): void {
     document.querySelectorAll<HTMLElement>('[data-rhp-globe]').forEach((root) => {
-      if (activeGlobes.has(root) || queuedGlobes.has(root)) return;
-      queuedGlobes.add(root);
-      globeObserver.observe(root);
+      if (activeGlobes.has(root) || initialisingGlobes.has(root)) return;
+      initialisingGlobes.add(root);
+      void initialiseGlobe(root).finally(() => {
+        initialisingGlobes.delete(root);
+      });
     });
   }
 
