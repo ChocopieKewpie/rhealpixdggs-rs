@@ -53,7 +53,7 @@ The cover globe additionally reads the bundled public-domain Natural Earth
 remains fully offline.
 
 The interactive homepage globe uses the same Natural Earth source to create a
-resolution-5 land cover with `polygon_to_cells_intersects()`, compact complete
+resolution-6 land cover with `polygon_to_cells_intersects()`, compact complete
 sibling groups, and export the resulting geographic cell boundaries:
 
 ```bash
@@ -80,8 +80,8 @@ site eventually outgrows its bandwidth allowance, set these public Astro
 environment variables to the absolute URLs of range-enabled storage:
 
 ```bash
-PUBLIC_RHEALPIX_PMTILES_URL=https://data.example.org/rhealpix-land-r5.pmtiles
-PUBLIC_RHEALPIX_GRID_PMTILES_URL=https://data.example.org/rhealpix-land-r5-grid.pmtiles
+PUBLIC_RHEALPIX_PMTILES_URL=https://data.example.org/rhealpix-land-r6.pmtiles
+PUBLIC_RHEALPIX_GRID_PMTILES_URL=https://data.example.org/rhealpix-land-r6-grid.pmtiles
 npm run build
 ```
 

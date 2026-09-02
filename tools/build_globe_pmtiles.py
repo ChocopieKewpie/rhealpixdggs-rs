@@ -21,21 +21,24 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "docs" / "data"
-OUTPUT = DATA / "rhealpix-land-r5.pmtiles"
-GRID_OUTPUT = DATA / "rhealpix-land-r5-grid.pmtiles"
+GENERATED = ROOT / "target" / "globe-data"
+COVERAGE_RESOLUTION = 6
+DATA_STEM = f"rhealpix-land-r{COVERAGE_RESOLUTION}"
+OUTPUT = DATA / f"{DATA_STEM}.pmtiles"
+GRID_OUTPUT = DATA / f"{DATA_STEM}-grid.pmtiles"
 TIPPECANOE_PACKAGE = "@bikehopper/node-tippecanoe@0.3.4"
 MAX_SOURCE_FEATURE_POSITIONS = 2048
 
 LAYERS = (
     (
         "compact_overview",
-        DATA / "rhealpix-land-r5-compacted-render.geojson",
+        DATA / f"{DATA_STEM}-compacted-render.geojson",
         0,
         1,
     ),
-    ("compact_cells", DATA / "rhealpix-land-r5-compacted.geojson", 2, 6),
-    ("raw_grid", DATA / "rhealpix-land-r5-uncompacted-grid.geojson", 2, 6),
-    ("coast", DATA / "natural-earth-coastlines-110m.geojson", 0, 6),
+    ("compact_cells", DATA / f"{DATA_STEM}-compacted.geojson", 2, 7),
+    ("raw_grid", GENERATED / f"{DATA_STEM}-uncompacted-grid.geojson", 3, 7),
+    ("coast", DATA / "natural-earth-coastlines-110m.geojson", 0, 7),
 )
 
 ARCHIVES = (
@@ -130,12 +133,12 @@ def _build(work_root: Path) -> list[Path]:
                 *_tippecanoe_command(),
                 "--force",
                 f"--output={relative_output.as_posix()}",
-                "--name=rHEALPix resolution-5 land grid",
+                f"--name=rHEALPix resolution-{COVERAGE_RESOLUTION} land grid",
                 "--description=Compacted and uncompacted rHEALPix land coverage",
                 "--attribution=Grid: rhealpixdggs; coastline: Natural Earth",
                 "--projection=EPSG:4326",
                 "--minimum-zoom=0",
-                "--maximum-zoom=6",
+                "--maximum-zoom=7",
                 "--include=cell",
                 "--include=resolution",
                 "--simplify-only-low-zooms",

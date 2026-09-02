@@ -13,22 +13,29 @@ https://www.naturalearthdata.com/downloads/110m-physical-vectors/110m-land/
 
 The figure and globe-data generators contain small, read-only parsers for the
 polygon records in this shapefile. The DBF attributes and spatial index are not
-required. `rhealpix-land-r5-compacted.geojson` contains the resolution-5
+required. `rhealpix-land-r6-compacted.geojson` contains the resolution-6
 intersects cover after lossless sibling compaction;
-`rhealpix-land-r5-compacted-render.geojson` maps the cover to resolution-3
+`rhealpix-land-r6-compacted-render.geojson` maps the cover to resolution-3
 ancestors and stores each antimeridian-safe polygon part as an independent,
 bounded low-zoom feature;
-`rhealpix-land-r5-uncompacted-grid.geojson` contains the deduplicated boundary
-edges of its exact resolution-5 expansion in bounded, spatially ordered
-batches; and
+`target/globe-data/rhealpix-land-r6-uncompacted-grid.geojson` is the generated,
+ignored intermediate containing the deduplicated boundary edges of its exact
+resolution-6 expansion in bounded, spatially ordered batches; and
 `natural-earth-coastlines-110m.geojson` contains its reference coastline.
-`rhealpix-land-r5.pmtiles` packages the compact overview, selectable cells, and
+`rhealpix-land-r6.pmtiles` packages the compact overview, selectable cells, and
 coast into a zoom-dependent vector-tile pyramid.
-`rhealpix-land-r5-grid.pmtiles` keeps the larger uncompacted edge layer separate
+`rhealpix-land-r6-grid.pmtiles` keeps the larger uncompacted edge layer separate
 so the default homepage view never downloads it. Both archives are generated
-by `tools/build_globe_pmtiles.py`. `rhealpix-polar-overlay.geojson` is a small
+by `tools/build_globe_pmtiles.py`. The 89.86 MB raw-grid GeoJSON is deliberately
+not committed or copied into the site; regenerate it before rebuilding the
+18.65 MB grid archive. `rhealpix-polar-overlay.geojson` is a small
 companion layer that preserves cells and coast beyond the ±85.05° Web Mercator
-limit used by browser vector tiles.
+limit used by browser vector tiles. The larger
+`rhealpix-polar-grid-overlay.geojson` is fetched only when the uncompacted view
+is selected. Pole-spanning Natural Earth polygons are
+covered in bounded longitude wedges so Antarctica selects the correct side of
+its geographic ring; synthetic ring-closing edges through the South Pole are
+excluded from the displayed coastline.
 
 The bounded source features are intentional. Resolution-wide `MultiPolygon`
 or global `MultiLineString` features make a vector archive range-loadable but

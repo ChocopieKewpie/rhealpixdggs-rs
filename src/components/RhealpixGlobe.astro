@@ -4,10 +4,11 @@ const base = import.meta.env.BASE_URL.endsWith('/')
   : `${import.meta.env.BASE_URL}/`;
 const configuredTiles = import.meta.env.PUBLIC_RHEALPIX_PMTILES_URL?.trim();
 const configuredGridTiles = import.meta.env.PUBLIC_RHEALPIX_GRID_PMTILES_URL?.trim();
-const tilesPath = configuredTiles || `${base}data/rhealpix-land-r5.pmtiles`;
+const tilesPath = configuredTiles || `${base}data/rhealpix-land-r6.pmtiles`;
 const gridTilesPath =
-  configuredGridTiles || `${base}data/rhealpix-land-r5-grid.pmtiles`;
+  configuredGridTiles || `${base}data/rhealpix-land-r6-grid.pmtiles`;
 const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
+const polarGridPath = `${base}data/rhealpix-polar-grid-overlay.geojson`;
 ---
 
 <div
@@ -16,13 +17,14 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
   data-tiles={tilesPath}
   data-grid-tiles={gridTilesPath}
   data-polar={polarPath}
+  data-polar-grid={polarGridPath}
   data-mode="compacted"
 >
   <div
     class="rhp-globe__map"
     data-rhp-globe-map
     role="region"
-    aria-label="Interactive globe comparing compacted and uncompacted resolution-5 rHEALPix land coverage"
+    aria-label="Interactive globe comparing compacted and uncompacted resolution-6 rHEALPix land coverage"
   ></div>
   <div class="rhp-globe__loading" data-rhp-globe-status aria-live="polite">
     Loading visible map tiles…
@@ -36,7 +38,7 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
         Compacted
       </button>
       <button type="button" aria-pressed="false" data-rhp-globe-mode="uncompacted">
-        Uncompacted r5
+        Uncompacted r6
       </button>
     </div>
     <div
@@ -51,11 +53,12 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
         <li><i style="--swatch: #d46f68"></i>3</li>
         <li><i style="--swatch: #9e668f"></i>4</li>
         <li><i style="--swatch: #46b9ad"></i>5</li>
+        <li><i style="--swatch: #3195ca"></i>6</li>
       </ol>
     </div>
     <div class="rhp-globe__raw-summary" data-rhp-globe-raw-summary hidden>
-      <strong>109,396</strong>
-      <span>resolution-5 cells</span>
+      <strong>939,985</strong>
+      <span>resolution-6 cells</span>
     </div>
   </div>
   <noscript>
@@ -103,7 +106,9 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
     '#9e668f',
     5,
     '#46b9ad',
-    '#46b9ad',
+    6,
+    '#3195ca',
+    '#3195ca',
   ] as import('maplibre-gl').ExpressionSpecification;
 
   function popupContent(cell: unknown, resolution: unknown): HTMLElement {
@@ -133,11 +138,13 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
     const tilePath = root.dataset.tiles;
     const gridTilePath = root.dataset.gridTiles;
     const polarPath = root.dataset.polar;
-    if (!container || !tilePath || !gridTilePath || !polarPath) return;
+    const polarGridPath = root.dataset.polarGrid;
+    if (!container || !tilePath || !gridTilePath || !polarPath || !polarGridPath) return;
 
     const archiveUrl = new URL(tilePath, window.location.href).href;
     const gridArchiveUrl = new URL(gridTilePath, window.location.href).href;
     const polarUrl = new URL(polarPath, window.location.href).href;
+    const polarGridUrl = new URL(polarGridPath, window.location.href).href;
     try {
       const { maplibregl } = await loadMapLibraries();
       const map = new maplibregl.Map({
@@ -145,7 +152,7 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
         center: [168, -24],
         zoom: 0.65,
         minZoom: 0,
-        maxZoom: 6,
+        maxZoom: 7,
         pitch: 0,
         attributionControl: false,
         canvasContextAttributes: { antialias: true },
@@ -297,19 +304,6 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
           },
         });
         map.addLayer({
-          id: 'polar-uncompacted-grid',
-          type: 'line',
-          source: 'polarOverlay',
-          filter: ['==', ['get', 'kind'], 'raw_grid'],
-          minzoom: 2,
-          layout: { visibility: 'none' },
-          paint: {
-            'line-color': '#eafcff',
-            'line-opacity': 0.72,
-            'line-width': 0.8,
-          },
-        });
-        map.addLayer({
           id: 'coastline',
           type: 'line',
           source: 'rhealpixTiles',
@@ -344,43 +338,62 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
       function ensureUncompactedLayer(): void {
         if (map.getLayer('uncompacted-grid')) {
           map.setLayoutProperty('uncompacted-grid', 'visibility', 'visible');
+          if (map.getLayer('polar-uncompacted-grid')) {
+            map.setLayoutProperty('polar-uncompacted-grid', 'visibility', 'visible');
+          }
           return;
         }
         if (status) {
           status.hidden = false;
-          status.textContent = 'Streaming the visible resolution-5 grid…';
+          status.textContent = 'Streaming the visible resolution-6 grid…';
         }
         map.addSource('rhealpixGridTiles', {
           type: 'vector',
           url: `pmtiles://${gridArchiveUrl}`,
         });
+        map.addSource('polarGridOverlay', { type: 'geojson', data: polarGridUrl });
         map.addLayer(
           {
             id: 'uncompacted-grid',
             type: 'line',
             source: 'rhealpixGridTiles',
             'source-layer': 'raw_grid',
-            minzoom: 2,
+            minzoom: 3,
             paint: {
               'line-color': '#eafcff',
               'line-opacity': [
                 'interpolate',
                 ['linear'],
                 ['zoom'],
-                2,
+                3,
                 0.28,
-                4,
+                5,
                 0.72,
               ],
               'line-width': [
                 'interpolate',
                 ['linear'],
                 ['zoom'],
-                2,
+                3,
                 0.42,
-                4,
+                5,
                 1.05,
               ],
+            },
+          },
+          'coastline',
+        );
+        map.addLayer(
+          {
+            id: 'polar-uncompacted-grid',
+            type: 'line',
+            source: 'polarGridOverlay',
+            filter: ['==', ['get', 'kind'], 'raw_grid'],
+            minzoom: 3,
+            paint: {
+              'line-color': '#eafcff',
+              'line-opacity': 0.72,
+              'line-width': 0.8,
             },
           },
           'coastline',
@@ -405,7 +418,7 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
         if (hint) {
           hint.textContent = compacted
             ? 'Drag to rotate · zoom in and select a compacted cell · switch views to compare the hierarchy'
-            : 'Drag to rotate · zoom to level 2 or closer to reveal the complete resolution-5 grid';
+            : 'Drag to rotate · zoom to level 3 or closer to reveal the complete resolution-6 grid';
         }
 
         for (const layer of [
@@ -415,14 +428,12 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
         ]) {
           map.setLayoutProperty(layer, 'visibility', compacted ? 'visible' : 'none');
         }
-        map.setLayoutProperty(
-          'polar-uncompacted-grid',
-          'visibility',
-          compacted ? 'none' : 'visible',
-        );
         if (compacted) {
           if (map.getLayer('uncompacted-grid')) {
             map.setLayoutProperty('uncompacted-grid', 'visibility', 'none');
+          }
+          if (map.getLayer('polar-uncompacted-grid')) {
+            map.setLayoutProperty('polar-uncompacted-grid', 'visibility', 'none');
           }
         } else {
           ensureUncompactedLayer();

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the self-contained GeoJSON used by the documentation globe.
 
-The land cover is calculated with the public Python API at resolution 5 and
+The land cover is calculated with the public Python API at resolution 6 and
 then compacted. Natural Earth 1:110m land polygons are already bundled in the
 repository for the README cover, so regeneration needs no network access and
 no optional GIS packages.
@@ -20,16 +20,21 @@ from typing import Any, Optional, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "docs" / "data" / "ne_110m_land.shp"
-CELLS_OUTPUT = ROOT / "docs" / "data" / "rhealpix-land-r5-compacted.geojson"
+COVERAGE_RESOLUTION = 6
+DATA_STEM = f"rhealpix-land-r{COVERAGE_RESOLUTION}"
+CELLS_OUTPUT = ROOT / "docs" / "data" / f"{DATA_STEM}-compacted.geojson"
 RENDER_OUTPUT = (
-    ROOT / "docs" / "data" / "rhealpix-land-r5-compacted-render.geojson"
+    ROOT / "docs" / "data" / f"{DATA_STEM}-compacted-render.geojson"
 )
 UNCOMPACTED_OUTPUT = (
-    ROOT / "docs" / "data" / "rhealpix-land-r5-uncompacted-grid.geojson"
+    ROOT / "target" / "globe-data" / f"{DATA_STEM}-uncompacted-grid.geojson"
 )
 COASTS_OUTPUT = ROOT / "docs" / "data" / "natural-earth-coastlines-110m.geojson"
 POLAR_OUTPUT = ROOT / "docs" / "data" / "rhealpix-polar-overlay.geojson"
+POLAR_GRID_OUTPUT = ROOT / "docs" / "data" / "rhealpix-polar-grid-overlay.geojson"
 POLAR_OVERLAP_LATITUDE = 84.8
+POLE_LATITUDE = 89.999999
+POLAR_COVERAGE_STRIP_DEGREES = 30
 OVERVIEW_RESOLUTION = 3
 GRID_LINES_PER_FEATURE = 256
 Point = tuple[float, float]
@@ -161,14 +166,63 @@ def _latlon(ring: Sequence[Point]) -> list[tuple[float, float]]:
     return [(latitude, longitude) for longitude, latitude in ring]
 
 
+def _is_pole_spanning(ring: Sequence[Point]) -> bool:
+    """Return whether a lon/lat ring uses a pole to close all longitudes."""
+
+    longitudes = [longitude for longitude, _ in ring]
+    latitudes = [latitude for _, latitude in ring]
+    reaches_pole = min(latitudes) <= -POLE_LATITUDE or max(latitudes) >= POLE_LATITUDE
+    return reaches_pole and max(longitudes) - min(longitudes) >= 359.0
+
+
+def _coverage_parts(exterior: Ring, holes: list[Ring]) -> list[tuple[Ring, list[Ring]]]:
+    """Split pole-spanning lon/lat polygons into unambiguous longitude wedges.
+
+    A planar point-in-polygon operation cannot infer which side of an exterior
+    ring contains a geographic pole. Natural Earth's Antarctic exterior closes
+    through the South Pole and both antimeridian endpoints, so passing it as one
+    ordinary lon/lat polygon selects the wrong side. Narrow longitude wedges
+    retain the same land boundary while making every planar polygon unambiguous.
+    """
+
+    if not _is_pole_spanning(exterior):
+        return [(exterior, holes)]
+
+    parts: list[tuple[Ring, list[Ring]]] = []
+    for left in range(-180, 180, POLAR_COVERAGE_STRIP_DEGREES):
+        right = left + POLAR_COVERAGE_STRIP_DEGREES
+        clipped = _clip_polygon_edge(exterior, float(left), keep_greater=True)
+        clipped = _clip_polygon_edge(clipped, float(right), keep_greater=False)
+        if len(clipped) < 3 or abs(_signed_area(clipped)) <= 1e-13:
+            continue
+
+        clipped_holes: list[Ring] = []
+        for hole in holes:
+            clipped_hole = _clip_polygon_edge(hole, float(left), keep_greater=True)
+            clipped_hole = _clip_polygon_edge(
+                clipped_hole, float(right), keep_greater=False
+            )
+            if len(clipped_hole) >= 3 and abs(_signed_area(clipped_hole)) > 1e-13:
+                clipped_holes.append(clipped_hole)
+        parts.append((clipped, clipped_holes))
+    if not parts:
+        raise ValueError("could not split pole-spanning land polygon")
+    return parts
+
+
 def _cover_land(rh: Any, records: Sequence[Sequence[Ring]]) -> list[str]:
     cells: set[str] = set()
-    polygons = [part for record in records for part in _polygon_parts(record)]
+    polygons = [
+        coverage_part
+        for record in records
+        for exterior, holes in _polygon_parts(record)
+        for coverage_part in _coverage_parts(exterior, holes)
+    ]
     for index, (exterior, holes) in enumerate(polygons, start=1):
         cells.update(
             rh.polygon_to_cells_intersects(
                 _latlon(exterior),
-                5,
+                COVERAGE_RESOLUTION,
                 holes=[_latlon(hole) for hole in holes] or None,
             )
         )
@@ -265,8 +319,13 @@ def _clip_line_segment(
     return ((x1, y1), (x2, y2))
 
 
-def _split_line_at_antimeridian(points: Sequence[Point]) -> list[Ring]:
-    values = _unwrap_longitudes((*points, points[0]))
+def _split_line_at_antimeridian(
+    points: Sequence[Point], *, closed: bool = True
+) -> list[Ring]:
+    if len(points) < 2:
+        return []
+    source = (*points, points[0]) if closed else tuple(points)
+    values = _unwrap_longitudes(source)
     result: list[Ring] = []
     for shift in (-360.0, 0.0, 360.0):
         shifted = [(longitude + shift, latitude) for longitude, latitude in values]
@@ -385,12 +444,18 @@ def _cell_geometry(
 def _cell_collection(rh: Any, cells: Sequence[str]) -> dict[str, Any]:
     return {
         "type": "FeatureCollection",
-        "name": "rHEALPix resolution-5 compacted Natural Earth land cover",
+        "name": (
+            f"rHEALPix resolution-{COVERAGE_RESOLUTION} compacted "
+            "Natural Earth land cover"
+        ),
         "metadata": {
-            "coverage_resolution": 5,
+            "coverage_resolution": COVERAGE_RESOLUTION,
             "cell_count": len(cells),
             "coverage_mode": "intersects",
             "source": "Natural Earth 1:110m land",
+            "pole_spanning_strategy": (
+                f"{POLAR_COVERAGE_STRIP_DEGREES}-degree longitude wedges"
+            ),
         },
         "features": [
             {
@@ -406,7 +471,7 @@ def _cell_collection(rh: Any, cells: Sequence[str]) -> dict[str, Any]:
 def _render_collection(rh: Any, cells: Sequence[str]) -> dict[str, Any]:
     """Return a bounded, resolution-3 generalisation for zooms zero and one.
 
-    At world scale, resolution-4 and resolution-5 cells are smaller than useful
+    At world scale, resolution-4 through resolution-6 cells are smaller than useful
     screen detail. Mapping them to their resolution-3 ancestors gives MapLibre
     a small first tile; the exact compacted cells take over at zoom two. Each
     antimeridian-safe polygon part remains independent, so neither Tippecanoe
@@ -444,7 +509,7 @@ def _render_collection(rh: Any, cells: Sequence[str]) -> dict[str, Any]:
         "type": "FeatureCollection",
         "name": "Resolution-3 overview of compacted rHEALPix land cover",
         "metadata": {
-            "coverage_resolution": 5,
+            "coverage_resolution": COVERAGE_RESOLUTION,
             "overview_resolution": OVERVIEW_RESOLUTION,
             "source_cell_count": len(cells),
             "cell_count": len(overview_cells),
@@ -458,14 +523,14 @@ def _render_collection(rh: Any, cells: Sequence[str]) -> dict[str, Any]:
 
 
 def _uncompacted_grid_collection(rh: Any, cells: Sequence[str]) -> dict[str, Any]:
-    """Return bounded batches of unique r5 edges for the exact expansion.
+    """Return bounded batches of unique edges for the exact expansion.
 
     The edges are sorted geographically before batching. This keeps each
     ``MultiLineString`` small and reasonably local while avoiding the large
     per-feature overhead of emitting more than 220,000 individual features.
     """
 
-    raw_cells = sorted(rh.uncompact_cells(list(cells), 5))
+    raw_cells = sorted(rh.uncompact_cells(list(cells), COVERAGE_RESOLUTION))
     if len(raw_cells) != len(set(raw_cells)):
         raise ValueError("uncompacted cell list contains duplicate identifiers")
 
@@ -479,7 +544,8 @@ def _uncompacted_grid_collection(rh: Any, cells: Sequence[str]) -> dict[str, Any
             edges.update(_split_edge_at_antimeridian(start, end))
         if index % 5_000 == 0 or index == len(raw_cells):
             print(
-                f"\rBuilding uncompacted r5 grid: {index:,}/{len(raw_cells):,} cells",
+                f"\rBuilding uncompacted r{COVERAGE_RESOLUTION} grid: "
+                f"{index:,}/{len(raw_cells):,} cells",
                 end="",
                 file=sys.stderr,
                 flush=True,
@@ -493,9 +559,12 @@ def _uncompacted_grid_collection(rh: Any, cells: Sequence[str]) -> dict[str, Any
     ]
     return {
         "type": "FeatureCollection",
-        "name": "rHEALPix resolution-5 uncompacted Natural Earth land grid",
+        "name": (
+            f"rHEALPix resolution-{COVERAGE_RESOLUTION} uncompacted "
+            "Natural Earth land grid"
+        ),
         "metadata": {
-            "coverage_resolution": 5,
+            "coverage_resolution": COVERAGE_RESOLUTION,
             "cell_count": len(raw_cells),
             "unique_edge_count": len(ordered_edges),
             "feature_count": len(edge_batches),
@@ -517,12 +586,23 @@ def _uncompacted_grid_collection(rh: Any, cells: Sequence[str]) -> dict[str, Any
     }
 
 
+def _coast_segments(ring: Ring) -> list[Ring]:
+    """Return coastline segments without synthetic pole-closing edges."""
+
+    if _is_pole_spanning(ring):
+        coastline = [
+            point for point in ring if abs(point[1]) < POLE_LATITUDE
+        ]
+        return _split_line_at_antimeridian(coastline)
+    return _split_line_at_antimeridian(ring)
+
+
 def _coast_collection(records: Sequence[Sequence[Ring]]) -> dict[str, Any]:
     lines = [
         _line_coordinates(segment)
         for record in records
         for ring in record
-        for segment in _split_line_at_antimeridian(ring)
+        for segment in _coast_segments(ring)
     ]
     return {
         "type": "FeatureCollection",
@@ -561,10 +641,10 @@ def _positions(value: Any) -> Any:
             yield from _positions(child)
 
 
-def _polar_overlay_collection(
+def _polar_overlay_collections(
     cells: dict[str, Any], grid: dict[str, Any], coasts: dict[str, Any]
-) -> dict[str, Any]:
-    """Preserve the small area outside Web Mercator's vector-tile limit."""
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Preserve polar geometry while keeping the exact grid lazy-loadable."""
 
     features: list[dict[str, Any]] = []
     for feature in cells["features"]:
@@ -579,7 +659,7 @@ def _polar_overlay_collection(
                 }
             )
 
-    for kind, collection in (("raw_grid", grid), ("coast", coasts)):
+    for kind, collection in (("coast", coasts),):
         lines = [
             line
             for feature in collection["features"]
@@ -595,15 +675,40 @@ def _polar_overlay_collection(
             for line in lines
         )
 
-    return {
+    polar = {
         "type": "FeatureCollection",
         "name": "rHEALPix polar overlay outside the Web Mercator tile extent",
         "metadata": {
             "overlap_latitude": POLAR_OVERLAP_LATITUDE,
             "purpose": "Preserve polar geometry beyond the PMTiles latitude limit",
+            "loading": "default compacted view",
         },
         "features": features,
     }
+    grid_lines = [
+        line
+        for feature in grid["features"]
+        for line in _line_parts(feature["geometry"])
+        if any(abs(position[1]) >= POLAR_OVERLAP_LATITUDE for position in line)
+    ]
+    polar_grid = {
+        "type": "FeatureCollection",
+        "name": "rHEALPix uncompacted polar grid outside the Web Mercator tile extent",
+        "metadata": {
+            "overlap_latitude": POLAR_OVERLAP_LATITUDE,
+            "purpose": "Preserve the exact polar grid beyond the PMTiles latitude limit",
+            "loading": "lazy uncompacted view",
+        },
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"kind": "raw_grid"},
+                "geometry": {"type": "LineString", "coordinates": line},
+            }
+            for line in grid_lines
+        ],
+    }
+    return polar, polar_grid
 
 
 def _serialise(value: dict[str, Any]) -> bytes:
@@ -641,16 +746,16 @@ def main() -> None:
     render_collection = _render_collection(rh, cells)
     uncompacted_collection = _uncompacted_grid_collection(rh, cells)
     coast_collection = _coast_collection(records)
+    polar_collection, polar_grid_collection = _polar_overlay_collections(
+        cell_collection, uncompacted_collection, coast_collection
+    )
     outputs = {
         CELLS_OUTPUT: _serialise(cell_collection),
         RENDER_OUTPUT: _serialise(render_collection),
         UNCOMPACTED_OUTPUT: _serialise(uncompacted_collection),
         COASTS_OUTPUT: _serialise(coast_collection),
-        POLAR_OUTPUT: _serialise(
-            _polar_overlay_collection(
-                cell_collection, uncompacted_collection, coast_collection
-            )
-        ),
+        POLAR_OUTPUT: _serialise(polar_collection),
+        POLAR_GRID_OUTPUT: _serialise(polar_grid_collection),
     }
     stale = [
         path

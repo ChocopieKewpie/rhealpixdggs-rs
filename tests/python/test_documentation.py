@@ -74,9 +74,10 @@ def test_globe_sources_use_bounded_features() -> None:
     root = Path(__file__).parents[2]
     data = root / "docs" / "data"
     sources = (
-        "rhealpix-land-r5-compacted-render.geojson",
-        "rhealpix-land-r5-uncompacted-grid.geojson",
+        "rhealpix-land-r6-compacted-render.geojson",
         "natural-earth-coastlines-110m.geojson",
+        "rhealpix-polar-overlay.geojson",
+        "rhealpix-polar-grid-overlay.geojson",
     )
 
     for name in sources:
@@ -91,16 +92,60 @@ def test_globe_sources_use_bounded_features() -> None:
         )
 
     overview = json.loads(
-        (data / "rhealpix-land-r5-compacted-render.geojson").read_text(
+        (data / "rhealpix-land-r6-compacted-render.geojson").read_text(
             encoding="utf-8"
         )
     )
     assert 1_000 < len(overview["features"]) < 2_000
+    assert overview["metadata"]["coverage_resolution"] == 6
     assert overview["metadata"]["overview_resolution"] == 3
-    assert overview["metadata"]["source_cell_count"] == 13_428
+    assert overview["metadata"]["source_cell_count"] == 48_249
     assert {feature["geometry"]["type"] for feature in overview["features"]} == {
         "Polygon"
     }
+
+    polar = json.loads(
+        (data / "rhealpix-polar-overlay.geojson").read_text(encoding="utf-8")
+    )
+    polar_grid = json.loads(
+        (data / "rhealpix-polar-grid-overlay.geojson").read_text(encoding="utf-8")
+    )
+    assert {feature["properties"]["kind"] for feature in polar["features"]} == {
+        "compact",
+        "coast",
+    }
+    assert {
+        feature["properties"]["kind"] for feature in polar_grid["features"]
+    } == {"raw_grid"}
+    assert polar_grid["metadata"]["loading"] == "lazy uncompacted view"
+
+
+def test_globe_antarctica_uses_the_land_side_of_the_polar_ring() -> None:
+    root = Path(__file__).parents[2]
+    data = root / "docs" / "data"
+    compacted = json.loads(
+        (data / "rhealpix-land-r6-compacted.geojson").read_text(encoding="utf-8")
+    )
+    identifiers = {
+        feature["properties"]["cell"] for feature in compacted["features"]
+    }
+
+    # Antarctica surrounds the South Pole. The compacted cover must contain
+    # each representative r6 cell, possibly through one of its stored parents.
+    for longitude in (-135.0, -45.0, 45.0, 135.0):
+        target = rh.latlng_to_cell(-85.0, longitude, 6)
+        assert any(target.startswith(identifier) for identifier in identifiers)
+
+    coasts = json.loads(
+        (data / "natural-earth-coastlines-110m.geojson").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert all(
+        abs(position[1]) < 89.999999
+        for feature in coasts["features"]
+        for position in feature["geometry"]["coordinates"]
+    ), "coastline contains an artificial ring-closing segment through a pole"
 
 
 def test_maplibre_worker_is_explicitly_bundled() -> None:
