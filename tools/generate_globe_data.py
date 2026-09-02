@@ -30,6 +30,8 @@ UNCOMPACTED_OUTPUT = (
 COASTS_OUTPUT = ROOT / "docs" / "data" / "natural-earth-coastlines-110m.geojson"
 POLAR_OUTPUT = ROOT / "docs" / "data" / "rhealpix-polar-overlay.geojson"
 POLAR_OVERLAP_LATITUDE = 84.8
+OVERVIEW_RESOLUTION = 3
+GRID_LINES_PER_FEATURE = 256
 Point = tuple[float, float]
 Ring = list[Point]
 
@@ -402,43 +404,66 @@ def _cell_collection(rh: Any, cells: Sequence[str]) -> dict[str, Any]:
 
 
 def _render_collection(rh: Any, cells: Sequence[str]) -> dict[str, Any]:
-    """Group cell polygons by resolution for fast MapLibre startup."""
+    """Return a bounded, resolution-3 generalisation for zooms zero and one.
 
-    groups: dict[int, list[list[list[list[float]]]]] = {}
-    for identifier in cells:
+    At world scale, resolution-4 and resolution-5 cells are smaller than useful
+    screen detail. Mapping them to their resolution-3 ancestors gives MapLibre
+    a small first tile; the exact compacted cells take over at zoom two. Each
+    antimeridian-safe polygon part remains independent, so neither Tippecanoe
+    nor MapLibre receives a resolution-wide ``MultiPolygon``.
+    """
+
+    overview_cells = sorted(
+        {
+            identifier[: OVERVIEW_RESOLUTION + 1]
+            if len(identifier) - 1 > OVERVIEW_RESOLUTION
+            else identifier
+            for identifier in cells
+        }
+    )
+    features: list[dict[str, Any]] = []
+    for identifier in overview_cells:
         resolution = len(identifier) - 1
-        density = 5 if resolution <= 2 else 3 if resolution == 3 else 2
+        density = 5 if resolution <= 2 else 3
         geometry = _cell_geometry(rh, identifier, density=density)
         polygons = (
             [geometry["coordinates"]]
             if geometry["type"] == "Polygon"
             else geometry["coordinates"]
         )
-        groups.setdefault(resolution, []).extend(polygons)
-
-    return {
-        "type": "FeatureCollection",
-        "name": "Render-optimised compacted rHEALPix land cover",
-        "metadata": {
-            "coverage_resolution": 5,
-            "cell_count": len(cells),
-            "feature_count": len(groups),
-            "coverage_mode": "intersects",
-            "source": "Natural Earth 1:110m land",
-        },
-        "features": [
+        features.extend(
             {
                 "type": "Feature",
                 "properties": {"resolution": resolution},
-                "geometry": {"type": "MultiPolygon", "coordinates": polygons},
+                "geometry": {"type": "Polygon", "coordinates": polygon},
             }
-            for resolution, polygons in sorted(groups.items())
-        ],
+            for polygon in polygons
+        )
+
+    return {
+        "type": "FeatureCollection",
+        "name": "Resolution-3 overview of compacted rHEALPix land cover",
+        "metadata": {
+            "coverage_resolution": 5,
+            "overview_resolution": OVERVIEW_RESOLUTION,
+            "source_cell_count": len(cells),
+            "cell_count": len(overview_cells),
+            "feature_count": len(features),
+            "feature_strategy": "one antimeridian-safe polygon part per feature",
+            "coverage_mode": "intersects",
+            "source": "Natural Earth 1:110m land",
+        },
+        "features": features,
     }
 
 
 def _uncompacted_grid_collection(rh: Any, cells: Sequence[str]) -> dict[str, Any]:
-    """Return unique r5 boundary edges for the compact cover's exact expansion."""
+    """Return bounded batches of unique r5 edges for the exact expansion.
+
+    The edges are sorted geographically before batching. This keeps each
+    ``MultiLineString`` small and reasonably local while avoiding the large
+    per-feature overhead of emitting more than 220,000 individual features.
+    """
 
     raw_cells = sorted(rh.uncompact_cells(list(cells), 5))
     if len(raw_cells) != len(set(raw_cells)):
@@ -462,6 +487,10 @@ def _uncompacted_grid_collection(rh: Any, cells: Sequence[str]) -> dict[str, Any
     print(file=sys.stderr)
 
     ordered_edges = sorted(edges)
+    edge_batches = [
+        ordered_edges[start : start + GRID_LINES_PER_FEATURE]
+        for start in range(0, len(ordered_edges), GRID_LINES_PER_FEATURE)
+    ]
     return {
         "type": "FeatureCollection",
         "name": "rHEALPix resolution-5 uncompacted Natural Earth land grid",
@@ -469,6 +498,8 @@ def _uncompacted_grid_collection(rh: Any, cells: Sequence[str]) -> dict[str, Any
             "coverage_resolution": 5,
             "cell_count": len(raw_cells),
             "unique_edge_count": len(ordered_edges),
+            "feature_count": len(edge_batches),
+            "maximum_edges_per_feature": GRID_LINES_PER_FEATURE,
             "coverage_mode": "intersects",
             "source": "Natural Earth 1:110m land",
         },
@@ -478,11 +509,10 @@ def _uncompacted_grid_collection(rh: Any, cells: Sequence[str]) -> dict[str, Any
                 "properties": {},
                 "geometry": {
                     "type": "MultiLineString",
-                    "coordinates": [
-                        _line_coordinates(edge) for edge in ordered_edges
-                    ],
+                    "coordinates": [_line_coordinates(edge) for edge in batch],
                 },
             }
+            for batch in edge_batches
         ],
     }
 
@@ -501,10 +531,20 @@ def _coast_collection(records: Sequence[Sequence[Ring]]) -> dict[str, Any]:
             {
                 "type": "Feature",
                 "properties": {},
-                "geometry": {"type": "MultiLineString", "coordinates": lines},
+                "geometry": {"type": "LineString", "coordinates": line},
             }
+            for line in lines
         ],
     }
+
+
+def _line_parts(geometry: dict[str, Any]) -> list[Ring]:
+    geometry_type = geometry["type"]
+    if geometry_type == "LineString":
+        return [geometry["coordinates"]]
+    if geometry_type == "MultiLineString":
+        return geometry["coordinates"]
+    raise ValueError(f"expected line geometry, found {geometry_type}")
 
 
 def _positions(value: Any) -> Any:
@@ -542,15 +582,17 @@ def _polar_overlay_collection(
     for kind, collection in (("raw_grid", grid), ("coast", coasts)):
         lines = [
             line
-            for line in collection["features"][0]["geometry"]["coordinates"]
+            for feature in collection["features"]
+            for line in _line_parts(feature["geometry"])
             if any(abs(position[1]) >= POLAR_OVERLAP_LATITUDE for position in line)
         ]
-        features.append(
+        features.extend(
             {
                 "type": "Feature",
                 "properties": {"kind": kind},
-                "geometry": {"type": "MultiLineString", "coordinates": lines},
+                "geometry": {"type": "LineString", "coordinates": line},
             }
+            for line in lines
         )
 
     return {

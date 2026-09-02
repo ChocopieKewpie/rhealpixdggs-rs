@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -53,3 +55,49 @@ def test_documentation_assets_exist() -> None:
     coastline = root / "docs" / "data" / "ne_10m_nz_land.geojson"
     assert coastline.is_file()
     assert coastline.stat().st_size > 100_000
+
+
+def _position_count(value: Any) -> int:
+    if (
+        isinstance(value, list)
+        and len(value) >= 2
+        and isinstance(value[0], (int, float))
+        and isinstance(value[1], (int, float))
+    ):
+        return 1
+    if isinstance(value, list):
+        return sum(_position_count(child) for child in value)
+    return 0
+
+
+def test_globe_sources_use_bounded_features() -> None:
+    root = Path(__file__).parents[2]
+    data = root / "docs" / "data"
+    sources = (
+        "rhealpix-land-r5-compacted-render.geojson",
+        "rhealpix-land-r5-uncompacted-grid.geojson",
+        "natural-earth-coastlines-110m.geojson",
+    )
+
+    for name in sources:
+        collection = json.loads((data / name).read_text(encoding="utf-8"))
+        counts = [
+            _position_count(feature["geometry"]["coordinates"])
+            for feature in collection["features"]
+        ]
+        assert counts, f"empty globe source: {name}"
+        assert max(counts) <= 2048, (
+            f"{name} contains an oversized feature with {max(counts):,} positions"
+        )
+
+    overview = json.loads(
+        (data / "rhealpix-land-r5-compacted-render.geojson").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert 1_000 < len(overview["features"]) < 2_000
+    assert overview["metadata"]["overview_resolution"] == 3
+    assert overview["metadata"]["source_cell_count"] == 13_428
+    assert {feature["geometry"]["type"] for feature in overview["features"]} == {
+        "Polygon"
+    }

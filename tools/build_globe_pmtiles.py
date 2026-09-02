@@ -24,6 +24,7 @@ DATA = ROOT / "docs" / "data"
 OUTPUT = DATA / "rhealpix-land-r5.pmtiles"
 GRID_OUTPUT = DATA / "rhealpix-land-r5-grid.pmtiles"
 TIPPECANOE_PACKAGE = "@bikehopper/node-tippecanoe@0.3.4"
+MAX_SOURCE_FEATURE_POSITIONS = 2048
 
 LAYERS = (
     (
@@ -62,7 +63,16 @@ def _prepare_layer(
     source: Path, destination: Path, minimum_zoom: int, maximum_zoom: int
 ) -> None:
     value: dict[str, Any] = json.loads(source.read_text(encoding="utf-8"))
-    for feature in value.get("features", []):
+    for index, feature in enumerate(value.get("features", [])):
+        position_count = sum(
+            1 for _ in _positions(feature.get("geometry", {}).get("coordinates", []))
+        )
+        if position_count > MAX_SOURCE_FEATURE_POSITIONS:
+            raise SystemExit(
+                f"{source.relative_to(ROOT)} feature {index} contains "
+                f"{position_count:,} coordinate positions; split source features "
+                f"below {MAX_SOURCE_FEATURE_POSITIONS:,} positions before tiling"
+            )
         feature["tippecanoe"] = {
             "minzoom": minimum_zoom,
             "maxzoom": maximum_zoom,
@@ -71,6 +81,20 @@ def _prepare_layer(
         json.dumps(value, separators=(",", ":"), ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+
+
+def _positions(value: Any) -> Any:
+    if (
+        isinstance(value, list)
+        and len(value) >= 2
+        and isinstance(value[0], (int, float))
+        and isinstance(value[1], (int, float))
+    ):
+        yield value
+        return
+    if isinstance(value, list):
+        for child in value:
+            yield from _positions(child)
 
 
 def _build(work_root: Path) -> list[Path]:

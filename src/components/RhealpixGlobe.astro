@@ -1,605 +1,498 @@
 ---
-import "maplibre-gl/dist/maplibre-gl.css";
-
-const baseUrl = import.meta.env.BASE_URL.endsWith("/")
+const base = import.meta.env.BASE_URL.endsWith('/')
   ? import.meta.env.BASE_URL
   : `${import.meta.env.BASE_URL}/`;
-
-const bundledCompact = `${baseUrl}data/rhealpix-land-r5.pmtiles`;
-const bundledGrid = `${baseUrl}data/rhealpix-land-r5-grid.pmtiles`;
-const bundledPolar = `${baseUrl}data/rhealpix-polar-overlay.geojson`;
-
-const compactTiles =
-  import.meta.env.PUBLIC_RHEALPIX_PMTILES_URL || bundledCompact;
-const gridTiles =
-  import.meta.env.PUBLIC_RHEALPIX_GRID_PMTILES_URL || bundledGrid;
-const polarOverlay =
-  import.meta.env.PUBLIC_RHEALPIX_POLAR_URL || bundledPolar;
+const configuredTiles = import.meta.env.PUBLIC_RHEALPIX_PMTILES_URL?.trim();
+const configuredGridTiles = import.meta.env.PUBLIC_RHEALPIX_GRID_PMTILES_URL?.trim();
+const tilesPath = configuredTiles || `${base}data/rhealpix-land-r5.pmtiles`;
+const gridTilesPath =
+  configuredGridTiles || `${base}data/rhealpix-land-r5-grid.pmtiles`;
+const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
 ---
 
 <div
   class="rhp-globe"
   data-rhp-globe
-  data-tiles={compactTiles}
-  data-grid-tiles={gridTiles}
-  data-polar={polarOverlay}
+  data-tiles={tilesPath}
+  data-grid-tiles={gridTilesPath}
+  data-polar={polarPath}
   data-mode="compacted"
 >
-  <div class="rhp-globe__map" data-rhp-map aria-label="Interactive rHEALPix globe"></div>
-
-  <div class="rhp-globe__toolbar" aria-label="Grid display mode">
-    <button
-      type="button"
-      class="rhp-globe__mode is-active"
-      data-rhp-mode="compacted"
-      aria-pressed="true"
+  <div
+    class="rhp-globe__map"
+    data-rhp-globe-map
+    role="region"
+    aria-label="Interactive globe comparing compacted and uncompacted resolution-5 rHEALPix land coverage"
+  ></div>
+  <div class="rhp-globe__loading" data-rhp-globe-status aria-live="polite">
+    Loading visible map tiles…
+  </div>
+  <div class="rhp-globe__hint" data-rhp-globe-hint>
+    Drag to rotate · zoom in and select a compacted cell · switch views to compare the hierarchy
+  </div>
+  <div class="rhp-globe__toolbar">
+    <div class="rhp-globe__toggle" role="group" aria-label="Land-grid representation">
+      <button type="button" aria-pressed="true" data-rhp-globe-mode="compacted">
+        Compacted
+      </button>
+      <button type="button" aria-pressed="false" data-rhp-globe-mode="uncompacted">
+        Uncompacted r5
+      </button>
+    </div>
+    <div
+      class="rhp-globe__legend"
+      data-rhp-globe-compact-legend
+      aria-label="Compacted cell resolution colours"
     >
-      Compacted
-    </button>
-    <button
-      type="button"
-      class="rhp-globe__mode"
-      data-rhp-mode="uncompacted"
-      aria-pressed="false"
-    >
-      Uncompacted
-    </button>
+      <span>Stored resolution</span>
+      <ol>
+        <li><i style="--swatch: #efb366"></i>1</li>
+        <li><i style="--swatch: #e7955d"></i>2</li>
+        <li><i style="--swatch: #d46f68"></i>3</li>
+        <li><i style="--swatch: #9e668f"></i>4</li>
+        <li><i style="--swatch: #46b9ad"></i>5</li>
+      </ol>
+    </div>
+    <div class="rhp-globe__raw-summary" data-rhp-globe-raw-summary hidden>
+      <strong>109,396</strong>
+      <span>resolution-5 cells</span>
+    </div>
   </div>
-
-  <div class="rhp-globe__status" data-rhp-status>
-    Loading globe…
-  </div>
-
-  <div class="rhp-globe__hint" data-rhp-hint hidden>
-    Zoom in to view the resolution 5 grid.
-  </div>
+  <noscript>
+    <p class="rhp-globe__fallback">Enable JavaScript to explore the interactive globe.</p>
+  </noscript>
 </div>
 
 <script>
-  const DETAIL_MIN_ZOOM = 2;
+  type MapLibraries = {
+    maplibregl: typeof import('maplibre-gl');
+  };
 
-  const roots = document.querySelectorAll<HTMLElement>("[data-rhp-globe]");
+  const activeGlobes = new WeakMap<HTMLElement, import('maplibre-gl').Map>();
+  const queuedGlobes = new WeakSet<HTMLElement>();
+  let librariesPromise: Promise<MapLibraries> | undefined;
 
-  function absoluteUrl(value: string): string {
-    return new URL(value, window.location.href).href;
+  function loadMapLibraries(): Promise<MapLibraries> {
+    librariesPromise ??= Promise.all([import('maplibre-gl'), import('pmtiles')]).then(
+      ([maplibregl, { Protocol }]) => {
+        const protocol = new Protocol();
+        maplibregl.addProtocol('pmtiles', protocol.tile);
+        return { maplibregl };
+      },
+    );
+    return librariesPromise;
   }
 
-  async function loadLibraries() {
-    const [maplibreModule, pmtilesModule] = await Promise.all([
-      import("maplibre-gl"),
-      import("pmtiles"),
-    ]);
+  const compactColour = [
+    'match',
+    ['get', 'resolution'],
+    1,
+    '#efb366',
+    2,
+    '#e7955d',
+    3,
+    '#d46f68',
+    4,
+    '#9e668f',
+    5,
+    '#46b9ad',
+    '#46b9ad',
+  ] as import('maplibre-gl').ExpressionSpecification;
 
-    return {
-      maplibregl: maplibreModule,
-      Protocol: pmtilesModule.Protocol,
-    };
+  function popupContent(cell: unknown, resolution: unknown): HTMLElement {
+    const content = document.createElement('div');
+    content.className = 'rhp-globe-popup';
+    const label = document.createElement('span');
+    label.textContent = 'rHEALPix cell';
+    const identifier = document.createElement('strong');
+    identifier.textContent = String(cell ?? 'Unknown');
+    const detail = document.createElement('small');
+    detail.textContent = `Compacted at resolution ${String(resolution ?? '—')}`;
+    content.append(label, identifier, detail);
+    return content;
   }
 
-  for (const root of roots) {
-    if (root.dataset.initialized === "true") continue;
-    root.dataset.initialized = "true";
+  async function initialiseGlobe(root: HTMLElement): Promise<void> {
+    if (activeGlobes.has(root)) return;
 
-    const mapElement = root.querySelector<HTMLElement>("[data-rhp-map]");
-    const status = root.querySelector<HTMLElement>("[data-rhp-status]");
-    const hint = root.querySelector<HTMLElement>("[data-rhp-hint]");
-    const modeButtons =
-      root.querySelectorAll<HTMLButtonElement>("[data-rhp-mode]");
+    const container = root.querySelector<HTMLElement>('[data-rhp-globe-map]');
+    const status = root.querySelector<HTMLElement>('[data-rhp-globe-status]');
+    const hint = root.querySelector<HTMLElement>('[data-rhp-globe-hint]');
+    const compactLegend = root.querySelector<HTMLElement>(
+      '[data-rhp-globe-compact-legend]',
+    );
+    const rawSummary = root.querySelector<HTMLElement>('[data-rhp-globe-raw-summary]');
+    const modeButtons = root.querySelectorAll<HTMLButtonElement>('[data-rhp-globe-mode]');
+    const tilePath = root.dataset.tiles;
+    const gridTilePath = root.dataset.gridTiles;
+    const polarPath = root.dataset.polar;
+    if (!container || !tilePath || !gridTilePath || !polarPath) return;
 
-    if (!mapElement || !root.dataset.tiles || !root.dataset.gridTiles) continue;
-
+    const archiveUrl = new URL(tilePath, window.location.href).href;
+    const gridArchiveUrl = new URL(gridTilePath, window.location.href).href;
+    const polarUrl = new URL(polarPath, window.location.href).href;
     try {
-      if (status) status.textContent = "Loading globe renderer…";
-
-      const { maplibregl, Protocol } = await loadLibraries();
-
-      /*
-       * Register PMTiles once for the page. The protocol uses HTTP Range
-       * requests, so GitHub Pages only transfers the byte ranges MapLibre
-       * needs rather than downloading the complete archive.
-       */
-      const globalState = window as any;
-
-      if (!globalState.__rhpPmtilesProtocol) {
-        globalState.__rhpPmtilesProtocol = new Protocol();
-        maplibregl.addProtocol(
-          "pmtiles",
-          globalState.__rhpPmtilesProtocol.tile,
-        );
-      }
-
-      if (status) status.textContent = "Loading coastline…";
-
-      const compactArchiveUrl = absoluteUrl(root.dataset.tiles);
-      const gridArchiveUrl = absoluteUrl(root.dataset.gridTiles);
-      const polarUrl = root.dataset.polar
-        ? absoluteUrl(root.dataset.polar)
-        : null;
-
+      const { maplibregl } = await loadMapLibraries();
       const map = new maplibregl.Map({
-        container: mapElement,
-        center: [10, 12],
+        container,
+        center: [168, -24],
         zoom: 0.65,
         minZoom: 0,
         maxZoom: 6,
+        pitch: 0,
         attributionControl: false,
-        renderWorldCopies: false,
+        canvasContextAttributes: { antialias: true },
         style: {
           version: 8,
-          projection: { type: "globe" },
+          projection: { type: 'globe' },
+          sky: {
+            'atmosphere-blend': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              0,
+              1,
+              5,
+              0.8,
+              7,
+              0,
+            ],
+          },
+          light: {
+            anchor: 'map',
+            color: '#e7f7ff',
+            intensity: 0.4,
+            position: [1.5, 90, 65],
+          },
           sources: {},
           layers: [
             {
-              id: "ocean",
-              type: "background",
-              paint: {
-                "background-color": "#09131f",
-              },
+              id: 'ocean',
+              type: 'background',
+              paint: { 'background-color': '#102b45' },
             },
           ],
         },
       });
 
+      activeGlobes.set(root, map);
       map.addControl(
-        new maplibregl.NavigationControl({
-          showCompass: true,
-          showZoom: true,
+        new maplibregl.NavigationControl({ showCompass: true, showZoom: true }),
+        'top-right',
+      );
+      map.addControl(new maplibregl.GlobeControl(), 'top-right');
+      map.addControl(
+        new maplibregl.AttributionControl({
+          compact: true,
+          customAttribution: 'Grid: rhealpixdggs · Coastline: Natural Earth',
         }),
-        "bottom-right",
+        'bottom-right',
       );
 
-      let currentMode: "compacted" | "uncompacted" = "compacted";
-      let gridSourceAdded = false;
-      let waitingForSource: string | null = null;
-
-      const setStatus = (message?: string) => {
-        if (!status) return;
-        if (message) {
-          status.textContent = message;
-          status.hidden = false;
-        } else {
-          status.hidden = true;
-        }
-      };
-
-      const setModeButtons = () => {
-        for (const button of modeButtons) {
-          const active = button.dataset.rhpMode === currentMode;
-          button.classList.toggle("is-active", active);
-          button.setAttribute("aria-pressed", String(active));
-        }
-      };
-
-      const setLayerVisibility = (
-        layerId: string,
-        visible: boolean,
-      ) => {
-        if (!map.getLayer(layerId)) return;
-        map.setLayoutProperty(
-          layerId,
-          "visibility",
-          visible ? "visible" : "none",
-        );
-      };
-
-      const updateZoomHint = () => {
-        if (!hint) return;
-        hint.hidden = map.getZoom() >= DETAIL_MIN_ZOOM;
-      };
-
-      /*
-       * Do not use map.once("idle") for the loading UI. "idle" waits for the
-       * entire scene to settle, including render/fade work, and makes PMTiles
-       * look slow even when its Range requests have already completed.
-       */
-      const waitForSource = (sourceId: string, message: string) => {
-        waitingForSource = sourceId;
-        setStatus(message);
-
-        const check = () => {
-          if (waitingForSource !== sourceId) {
-            map.off("sourcedata", check);
-            return;
-          }
-
-          if (map.getSource(sourceId) && map.isSourceLoaded(sourceId)) {
-            waitingForSource = null;
-            setStatus();
-            map.off("sourcedata", check);
-          }
-        };
-
-        map.on("sourcedata", check);
-        check();
-      };
-
-      const addCompactArchive = () => {
-        if (map.getSource("rhealpixTiles")) return;
-
-        map.addSource("rhealpixTiles", {
-          type: "vector",
-          url: `pmtiles://${compactArchiveUrl}`,
+      function addTileLayers(): void {
+        map.addSource('rhealpixTiles', {
+          type: 'vector',
+          url: `pmtiles://${archiveUrl}`,
         });
-
-        /*
-         * IMPORTANT PERFORMANCE FIX:
-         *
-         * Deliberately do NOT add the old "compact_overview" source-layer.
-         * That layer groups thousands of cell polygons into huge MultiPolygon
-         * features. Feature count is low, but vertex count is still high, and
-         * MapLibre has to decode, triangulate and globe-subdivide all of it at
-         * the initial world view.
-         *
-         * Coastline is cheap and gives an immediate globe. The true compacted
-         * DGGS cells are shown from z=2, where they are already spatially tiled.
-         */
+        map.addSource('polarOverlay', { type: 'geojson', data: polarUrl });
         map.addLayer({
-          id: "rhealpixCoastHalo",
-          type: "line",
-          source: "rhealpixTiles",
-          "source-layer": "coast",
+          id: 'compact-overview-fill',
+          type: 'fill',
+          source: 'rhealpixTiles',
+          'source-layer': 'compact_overview',
+          maxzoom: 2,
           paint: {
-            "line-color": "rgba(4, 9, 15, 0.85)",
-            "line-width": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-              0,
-              1.8,
-              3,
-              3.2,
-            ],
+            'fill-color': compactColour,
+            'fill-opacity': 0.79,
           },
         });
-
         map.addLayer({
-          id: "rhealpixCoast",
-          type: "line",
-          source: "rhealpixTiles",
-          "source-layer": "coast",
+          id: 'polar-compact-fill',
+          type: 'fill',
+          source: 'polarOverlay',
+          filter: ['==', ['get', 'kind'], 'compact'],
           paint: {
-            "line-color": "rgba(215, 231, 240, 0.88)",
-            "line-width": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-              0,
-              0.7,
-              3,
-              1.25,
-            ],
+            'fill-color': compactColour,
+            'fill-opacity': 0.79,
           },
         });
-
         map.addLayer({
-          id: "rhealpixCompactFill",
-          type: "fill",
-          source: "rhealpixTiles",
-          "source-layer": "compact_cells",
-          minzoom: DETAIL_MIN_ZOOM,
+          id: 'compact-overview-grid',
+          type: 'line',
+          source: 'rhealpixTiles',
+          'source-layer': 'compact_overview',
+          minzoom: 1,
+          maxzoom: 2,
           paint: {
-            "fill-color": "#87b99d",
-            "fill-opacity": 0.48,
+            'line-color': '#ecfbff',
+            'line-opacity': 0.34,
+            'line-width': 0.5,
           },
         });
-
         map.addLayer({
-          id: "rhealpixCompactLine",
-          type: "line",
-          source: "rhealpixTiles",
-          "source-layer": "compact_cells",
-          minzoom: DETAIL_MIN_ZOOM,
+          id: 'compact-cell-fill',
+          type: 'fill',
+          source: 'rhealpixTiles',
+          'source-layer': 'compact_cells',
+          minzoom: 2,
           paint: {
-            "line-color": "rgba(232, 246, 246, 0.82)",
-            "line-width": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
+            'fill-color': compactColour,
+            'fill-opacity': 0.79,
+          },
+        });
+        map.addLayer({
+          id: 'compact-cell-grid',
+          type: 'line',
+          source: 'rhealpixTiles',
+          'source-layer': 'compact_cells',
+          minzoom: 2,
+          paint: {
+            'line-color': '#ecfbff',
+            'line-opacity': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
               2,
-              0.35,
+              0.48,
               4,
-              0.75,
-              6,
-              1.15,
+              0.78,
+            ],
+            'line-width': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              2,
+              0.58,
+              4,
+              1.05,
             ],
           },
         });
-      };
-
-      const addPolarOverlay = () => {
-        if (!polarUrl || map.getSource("rhealpixPolar")) return;
-
-        map.addSource("rhealpixPolar", {
-          type: "geojson",
-          data: polarUrl,
-        });
-
-        /*
-         * Keep the polar correction lightweight. A line layer avoids the
-         * expensive global fill triangulation that caused the old overview
-         * path to stall.
-         */
         map.addLayer({
-          id: "rhealpixPolarLine",
-          type: "line",
-          source: "rhealpixPolar",
+          id: 'polar-compact-grid',
+          type: 'line',
+          source: 'polarOverlay',
+          filter: ['==', ['get', 'kind'], 'compact'],
           paint: {
-            "line-color": "rgba(232, 246, 246, 0.78)",
-            "line-width": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
+            'line-color': '#ecfbff',
+            'line-opacity': 0.68,
+            'line-width': 0.8,
+          },
+        });
+        map.addLayer({
+          id: 'polar-uncompacted-grid',
+          type: 'line',
+          source: 'polarOverlay',
+          filter: ['==', ['get', 'kind'], 'raw_grid'],
+          minzoom: 2,
+          layout: { visibility: 'none' },
+          paint: {
+            'line-color': '#eafcff',
+            'line-opacity': 0.72,
+            'line-width': 0.8,
+          },
+        });
+        map.addLayer({
+          id: 'coastline',
+          type: 'line',
+          source: 'rhealpixTiles',
+          'source-layer': 'coast',
+          paint: {
+            'line-color': '#f7fcff',
+            'line-opacity': 0.9,
+            'line-width': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
               0,
-              0.45,
+              0.8,
               3,
-              0.9,
+              1.7,
             ],
           },
         });
-      };
+        map.addLayer({
+          id: 'polar-coastline',
+          type: 'line',
+          source: 'polarOverlay',
+          filter: ['==', ['get', 'kind'], 'coast'],
+          paint: {
+            'line-color': '#f7fcff',
+            'line-opacity': 0.9,
+            'line-width': 1.2,
+          },
+        });
+      }
 
-      const addGridArchive = () => {
-        if (gridSourceAdded) return;
-        gridSourceAdded = true;
-
-        map.addSource("rhealpixGridTiles", {
-          type: "vector",
+      function ensureUncompactedLayer(): void {
+        if (map.getLayer('uncompacted-grid')) {
+          map.setLayoutProperty('uncompacted-grid', 'visibility', 'visible');
+          return;
+        }
+        if (status) {
+          status.hidden = false;
+          status.textContent = 'Streaming the visible resolution-5 grid…';
+        }
+        map.addSource('rhealpixGridTiles', {
+          type: 'vector',
           url: `pmtiles://${gridArchiveUrl}`,
         });
-
-        map.addLayer({
-          id: "rhealpixGridFill",
-          type: "fill",
-          source: "rhealpixGridTiles",
-          "source-layer": "raw_grid",
-          minzoom: DETAIL_MIN_ZOOM,
-          paint: {
-            "fill-color": "#77b8ad",
-            "fill-opacity": 0.24,
+        map.addLayer(
+          {
+            id: 'uncompacted-grid',
+            type: 'line',
+            source: 'rhealpixGridTiles',
+            'source-layer': 'raw_grid',
+            minzoom: 2,
+            paint: {
+              'line-color': '#eafcff',
+              'line-opacity': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                2,
+                0.28,
+                4,
+                0.72,
+              ],
+              'line-width': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                2,
+                0.42,
+                4,
+                1.05,
+              ],
+            },
           },
+          'coastline',
+        );
+        map.once('idle', () => {
+          if (status) status.hidden = true;
         });
+      }
 
-        map.addLayer({
-          id: "rhealpixGridLine",
-          type: "line",
-          source: "rhealpixGridTiles",
-          "source-layer": "raw_grid",
-          minzoom: DETAIL_MIN_ZOOM,
-          paint: {
-            "line-color": "rgba(226, 244, 242, 0.74)",
-            "line-width": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-              2,
-              0.25,
-              4,
-              0.55,
-              6,
-              0.9,
-            ],
-          },
+      function setMode(mode: 'compacted' | 'uncompacted'): void {
+        const compacted = mode === 'compacted';
+        root.dataset.mode = mode;
+        modeButtons.forEach((button) => {
+          button.setAttribute(
+            'aria-pressed',
+            String(button.dataset.rhpGlobeMode === mode),
+          );
         });
-      };
-
-      const applyMode = () => {
-        const compacted = currentMode === "compacted";
-
-        if (!compacted) addGridArchive();
-
-        setLayerVisibility("rhealpixCompactFill", compacted);
-        setLayerVisibility("rhealpixCompactLine", compacted);
-        setLayerVisibility("rhealpixGridFill", !compacted);
-        setLayerVisibility("rhealpixGridLine", !compacted);
-
-        setModeButtons();
-        updateZoomHint();
-
-        if (map.getZoom() < DETAIL_MIN_ZOOM) {
-          /*
-           * At the world view there is intentionally no resolution-5 polygon
-           * payload anymore. This is the key to instant startup.
-           */
-          waitingForSource = null;
-          setStatus();
-          return;
+        if (compactLegend) compactLegend.hidden = !compacted;
+        if (rawSummary) rawSummary.hidden = compacted;
+        if (hint) {
+          hint.textContent = compacted
+            ? 'Drag to rotate · zoom in and select a compacted cell · switch views to compare the hierarchy'
+            : 'Drag to rotate · zoom to level 2 or closer to reveal the complete resolution-5 grid';
         }
 
+        for (const layer of [
+          'compact-overview-grid',
+          'compact-cell-grid',
+          'polar-compact-grid',
+        ]) {
+          map.setLayoutProperty(layer, 'visibility', compacted ? 'visible' : 'none');
+        }
+        map.setLayoutProperty(
+          'polar-uncompacted-grid',
+          'visibility',
+          compacted ? 'none' : 'visible',
+        );
         if (compacted) {
-          waitForSource("rhealpixTiles", "Streaming visible compacted cells…");
+          if (map.getLayer('uncompacted-grid')) {
+            map.setLayoutProperty('uncompacted-grid', 'visibility', 'none');
+          }
         } else {
-          waitForSource(
-            "rhealpixGridTiles",
-            "Streaming visible uncompacted cells…",
-          );
+          ensureUncompactedLayer();
         }
-      };
-
-      map.on("load", () => {
-        addCompactArchive();
-        addPolarOverlay();
-        applyMode();
-
-        /*
-         * The first visible source at the global view is just the coastline.
-         * Hide the status as soon as that source's current Range requests are
-         * complete; do not wait for the whole MapLibre scene to become idle.
-         */
-        waitForSource("rhealpixTiles", "Loading coastline…");
-        updateZoomHint();
-      });
-
-      map.on("zoomend", () => {
-        updateZoomHint();
-
-        if (map.getZoom() < DETAIL_MIN_ZOOM) {
-          waitingForSource = null;
-          setStatus();
-          return;
+        for (const layer of [
+          'compact-overview-fill',
+          'compact-cell-fill',
+          'polar-compact-fill',
+        ]) {
+          map.setPaintProperty(layer, 'fill-opacity', compacted ? 0.79 : 0.62);
+          map.setPaintProperty(layer, 'fill-color', compacted ? compactColour : '#46b9ad');
         }
+      }
 
-        if (currentMode === "compacted") {
-          waitForSource("rhealpixTiles", "Streaming visible compacted cells…");
-        } else {
-          addGridArchive();
-          waitForSource(
-            "rhealpixGridTiles",
-            "Streaming visible uncompacted cells…",
-          );
-        }
-      });
+      function inspectCompactedCell(
+        event: import('maplibre-gl').MapLayerMouseEvent,
+      ): void {
+        if (root.dataset.mode !== 'compacted') return;
+        const feature = event.features?.[0];
+        if (!feature) return;
+        new maplibregl.Popup({ closeButton: false, offset: 9 })
+          .setLngLat(event.lngLat)
+          .setDOMContent(
+            popupContent(feature.properties?.cell, feature.properties?.resolution),
+          )
+          .addTo(map);
+      }
 
-      for (const button of modeButtons) {
-        button.addEventListener("click", () => {
-          const nextMode = button.dataset.rhpMode;
-          if (nextMode !== "compacted" && nextMode !== "uncompacted") return;
-          if (nextMode === currentMode) return;
-
-          currentMode = nextMode;
-          root.dataset.mode = nextMode;
-          applyMode();
+      map.on('load', () => {
+        root.classList.add('is-ready');
+        addTileLayers();
+        modeButtons.forEach((button) => {
+          button.addEventListener('click', () => {
+            const mode = button.dataset.rhpGlobeMode;
+            if (mode === 'compacted' || mode === 'uncompacted') setMode(mode);
+          });
         });
-      }
-
-      map.on("error", (event: any) => {
-        console.error("rHEALPix globe error:", event?.error ?? event);
-        if (status) {
-          status.textContent =
-            "The globe could not load one of its map resources.";
-          status.hidden = false;
-        }
+        map.on('click', 'compact-cell-fill', inspectCompactedCell);
+        map.on('click', 'polar-compact-fill', inspectCompactedCell);
+        map.on('mouseenter', 'compact-cell-fill', () => {
+          map.getCanvas().style.cursor =
+            root.dataset.mode === 'compacted' ? 'pointer' : '';
+        });
+        map.on('mouseleave', 'compact-cell-fill', () => {
+          map.getCanvas().style.cursor = '';
+        });
+        map.on('mouseenter', 'polar-compact-fill', () => {
+          map.getCanvas().style.cursor =
+            root.dataset.mode === 'compacted' ? 'pointer' : '';
+        });
+        map.on('mouseleave', 'polar-compact-fill', () => {
+          map.getCanvas().style.cursor = '';
+        });
+        map.once('idle', () => {
+          if (status) status.hidden = true;
+        });
       });
+      map.on('error', (event) => {
+        if (status) {
+          status.hidden = false;
+          status.textContent = 'The map tiles could not be loaded.';
+        }
+        console.error('rHEALPix globe:', event.error);
+      });
+    } catch {
+      if (status) status.textContent = 'This browser cannot display the interactive globe.';
+    }
+  }
 
-      /*
-       * Astro layouts can change the component width immediately after the
-       * client script runs. Resize once the browser has completed layout.
-       */
-      requestAnimationFrame(() => map.resize());
-    } catch (error) {
-      console.error("Unable to initialise rHEALPix globe:", error);
-      if (status) {
-        status.textContent = "Unable to initialise the interactive globe.";
-        status.hidden = false;
+  const globeObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        globeObserver.unobserve(entry.target);
+        void initialiseGlobe(entry.target as HTMLElement);
       }
-    }
+    },
+    { rootMargin: '320px 0px' },
+  );
+
+  function initialiseGlobes(): void {
+    document.querySelectorAll<HTMLElement>('[data-rhp-globe]').forEach((root) => {
+      if (activeGlobes.has(root) || queuedGlobes.has(root)) return;
+      queuedGlobes.add(root);
+      globeObserver.observe(root);
+    });
   }
+
+  initialiseGlobes();
+  document.addEventListener('astro:page-load', initialiseGlobes);
 </script>
-
-<style>
-  .rhp-globe {
-    position: relative;
-    width: 100%;
-    min-height: 32rem;
-    overflow: hidden;
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    border-radius: 1rem;
-    background:
-      radial-gradient(circle at 50% 44%, rgba(45, 87, 107, 0.24), transparent 46%),
-      #09131f;
-  }
-
-  .rhp-globe__map {
-    width: 100%;
-    min-height: 32rem;
-    height: min(68vh, 42rem);
-  }
-
-  .rhp-globe__toolbar {
-    position: absolute;
-    z-index: 4;
-    top: 0.85rem;
-    left: 50%;
-    display: flex;
-    gap: 0.25rem;
-    padding: 0.25rem;
-    border: 1px solid rgba(226, 232, 240, 0.18);
-    border-radius: 999px;
-    background: rgba(6, 14, 23, 0.78);
-    box-shadow: 0 0.45rem 1.4rem rgba(0, 0, 0, 0.25);
-    backdrop-filter: blur(10px);
-    transform: translateX(-50%);
-  }
-
-  .rhp-globe__mode {
-    appearance: none;
-    border: 0;
-    border-radius: 999px;
-    padding: 0.48rem 0.82rem;
-    background: transparent;
-    color: rgba(226, 232, 240, 0.78);
-    font: inherit;
-    font-size: 0.78rem;
-    font-weight: 650;
-    line-height: 1;
-    cursor: pointer;
-    transition:
-      background 120ms ease,
-      color 120ms ease;
-  }
-
-  .rhp-globe__mode:hover {
-    color: #f8fafc;
-  }
-
-  .rhp-globe__mode.is-active {
-    background: rgba(226, 232, 240, 0.14);
-    color: #ffffff;
-  }
-
-  .rhp-globe__status,
-  .rhp-globe__hint {
-    position: absolute;
-    z-index: 4;
-    left: 50%;
-    bottom: 0.9rem;
-    max-width: calc(100% - 2rem);
-    padding: 0.42rem 0.68rem;
-    border: 1px solid rgba(226, 232, 240, 0.16);
-    border-radius: 999px;
-    background: rgba(6, 14, 23, 0.76);
-    color: rgba(241, 245, 249, 0.88);
-    box-shadow: 0 0.35rem 1rem rgba(0, 0, 0, 0.2);
-    font-size: 0.74rem;
-    line-height: 1.2;
-    text-align: center;
-    backdrop-filter: blur(10px);
-    transform: translateX(-50%);
-    pointer-events: none;
-  }
-
-  .rhp-globe__hint {
-    bottom: 0.9rem;
-  }
-
-  .rhp-globe__status:not([hidden]) + .rhp-globe__hint:not([hidden]) {
-    display: none;
-  }
-
-  :global(.rhp-globe .maplibregl-canvas) {
-    outline: none;
-  }
-
-  :global(.rhp-globe .maplibregl-ctrl-group) {
-    overflow: hidden;
-    border: 1px solid rgba(226, 232, 240, 0.14);
-    background: rgba(6, 14, 23, 0.72);
-    box-shadow: none;
-    backdrop-filter: blur(8px);
-  }
-
-  :global(.rhp-globe .maplibregl-ctrl-group button) {
-    filter: invert(1);
-    opacity: 0.8;
-  }
-
-  @media (max-width: 700px) {
-    .rhp-globe,
-    .rhp-globe__map {
-      min-height: 27rem;
-    }
-
-    .rhp-globe__map {
-      height: 62vh;
-    }
-  }
-</style>
