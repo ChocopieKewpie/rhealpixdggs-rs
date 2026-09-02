@@ -101,3 +101,12 @@ def test_globe_sources_use_bounded_features() -> None:
     assert {feature["geometry"]["type"] for feature in overview["features"]} == {
         "Polygon"
     }
+
+
+def test_maplibre_worker_is_explicitly_bundled() -> None:
+    root = Path(__file__).parents[2]
+    component = (root / "src" / "components" / "RhealpixGlobe.astro").read_text(
+        encoding="utf-8"
+    )
+    assert "maplibre-gl-worker.mjs?worker&url" in component
+    assert "setWorkerUrl(maplibreWorkerUrl)" in component

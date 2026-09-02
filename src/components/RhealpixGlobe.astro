@@ -64,6 +64,8 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
 </div>
 
 <script>
+  import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+
   type MapLibraries = {
     maplibregl: typeof import('maplibre-gl');
   };
@@ -75,6 +77,11 @@ const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
   function loadMapLibraries(): Promise<MapLibraries> {
     librariesPromise ??= Promise.all([import('maplibre-gl'), import('pmtiles')]).then(
       ([maplibregl, { Protocol }]) => {
+        // MapLibre's ESM distribution discovers its worker as a sibling of the
+        // library entrypoint. Astro/Vite relocates and hashes that entrypoint,
+        // so bundle the worker explicitly and provide the generated base-aware
+        // URL rather than allowing MapLibre to request a nonexistent sibling.
+        maplibregl.setWorkerUrl(maplibreWorkerUrl);
         const protocol = new Protocol();
         maplibregl.addProtocol('pmtiles', protocol.tile);
         return { maplibregl };

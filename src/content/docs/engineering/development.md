@@ -75,6 +75,9 @@ tiles, never runs polygon coverage in the browser, and does not contact the
 larger grid archive until a visitor selects that view. The homepage starts
 MapLibre immediately so the globe controls and progressively streamed compact
 view are available without depending on an intersection or map-wide idle event.
+The MapLibre module worker is bundled explicitly by Astro and configured with
+the generated base-aware URL, which keeps it valid under the GitHub Pages
+`/rhealpixdggs-rs/` project path.
 
 The default—and cheapest—production setup is the existing GitHub Pages
 deployment. The two `.pmtiles` files are copied from `docs/data/` into the
