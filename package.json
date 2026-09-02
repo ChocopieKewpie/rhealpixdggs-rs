@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro check && astro build",
+    "build:globe-tiles": "python tools/build_globe_pmtiles.py",
     "preview": "astro preview"
   },
   "dependencies": {
@@ -14,6 +15,7 @@
     "astro": "7.2.10",
     "katex": "0.18.5",
     "maplibre-gl": "6.6.0",
+    "pmtiles": "4.5.0",
     "rehype-katex": "7.0.1",
     "remark-math": "6.0.0",
     "sharp": "0.35.4",

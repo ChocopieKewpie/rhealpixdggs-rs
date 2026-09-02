@@ -2,19 +2,20 @@
 const base = import.meta.env.BASE_URL.endsWith('/')
   ? import.meta.env.BASE_URL
   : `${import.meta.env.BASE_URL}/`;
-const cellsPath = `${base}data/rhealpix-land-r5-compacted-render.geojson`;
-const detailCellsPath = `${base}data/rhealpix-land-r5-compacted.geojson`;
-const rawGridPath = `${base}data/rhealpix-land-r5-uncompacted-grid.geojson`;
-const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
+const configuredTiles = import.meta.env.PUBLIC_RHEALPIX_PMTILES_URL?.trim();
+const configuredGridTiles = import.meta.env.PUBLIC_RHEALPIX_GRID_PMTILES_URL?.trim();
+const tilesPath = configuredTiles || `${base}data/rhealpix-land-r5.pmtiles`;
+const gridTilesPath =
+  configuredGridTiles || `${base}data/rhealpix-land-r5-grid.pmtiles`;
+const polarPath = `${base}data/rhealpix-polar-overlay.geojson`;
 ---
 
 <div
   class="rhp-globe"
   data-rhp-globe
-  data-cells={cellsPath}
-  data-detail-cells={detailCellsPath}
-  data-raw-grid={rawGridPath}
-  data-coasts={coastsPath}
+  data-tiles={tilesPath}
+  data-grid-tiles={gridTilesPath}
+  data-polar={polarPath}
   data-mode="compacted"
 >
   <div
@@ -24,10 +25,10 @@ const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
     aria-label="Interactive globe comparing compacted and uncompacted resolution-5 rHEALPix land coverage"
   ></div>
   <div class="rhp-globe__loading" data-rhp-globe-status aria-live="polite">
-    Starting the globe…
+    Loading visible map tiles…
   </div>
   <div class="rhp-globe__hint" data-rhp-globe-hint>
-    Drag to rotate · select a compacted cell · switch views to compare the hierarchy
+    Drag to rotate · zoom in and select a compacted cell · switch views to compare the hierarchy
   </div>
   <div class="rhp-globe__toolbar">
     <div class="rhp-globe__toggle" role="group" aria-label="Land-grid representation">
@@ -63,9 +64,40 @@ const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
 </div>
 
 <script>
-  import * as maplibregl from 'maplibre-gl';
+  type MapLibraries = {
+    maplibregl: typeof import('maplibre-gl');
+  };
 
-  const activeGlobes = new WeakMap<HTMLElement, maplibregl.Map>();
+  const activeGlobes = new WeakMap<HTMLElement, import('maplibre-gl').Map>();
+  const queuedGlobes = new WeakSet<HTMLElement>();
+  let librariesPromise: Promise<MapLibraries> | undefined;
+
+  function loadMapLibraries(): Promise<MapLibraries> {
+    librariesPromise ??= Promise.all([import('maplibre-gl'), import('pmtiles')]).then(
+      ([maplibregl, { Protocol }]) => {
+        const protocol = new Protocol();
+        maplibregl.addProtocol('pmtiles', protocol.tile);
+        return { maplibregl };
+      },
+    );
+    return librariesPromise;
+  }
+
+  const compactColour = [
+    'match',
+    ['get', 'resolution'],
+    1,
+    '#efb366',
+    2,
+    '#e7955d',
+    3,
+    '#d46f68',
+    4,
+    '#9e668f',
+    5,
+    '#46b9ad',
+    '#46b9ad',
+  ] as import('maplibre-gl').ExpressionSpecification;
 
   function popupContent(cell: unknown, resolution: unknown): HTMLElement {
     const content = document.createElement('div');
@@ -80,7 +112,7 @@ const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
     return content;
   }
 
-  function initialiseGlobe(root: HTMLElement): void {
+  async function initialiseGlobe(root: HTMLElement): Promise<void> {
     if (activeGlobes.has(root)) return;
 
     const container = root.querySelector<HTMLElement>('[data-rhp-globe-map]');
@@ -91,17 +123,16 @@ const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
     );
     const rawSummary = root.querySelector<HTMLElement>('[data-rhp-globe-raw-summary]');
     const modeButtons = root.querySelectorAll<HTMLButtonElement>('[data-rhp-globe-mode]');
-    const cells = root.dataset.cells;
-    const detailCells = root.dataset.detailCells;
-    const rawGrid = root.dataset.rawGrid;
-    const coasts = root.dataset.coasts;
-    if (!container || !cells || !detailCells || !rawGrid || !coasts) return;
-    const cellsUrl = cells;
-    const detailCellsUrl = detailCells;
-    const rawGridUrl = rawGrid;
-    const coastsUrl = coasts;
+    const tilePath = root.dataset.tiles;
+    const gridTilePath = root.dataset.gridTiles;
+    const polarPath = root.dataset.polar;
+    if (!container || !tilePath || !gridTilePath || !polarPath) return;
 
+    const archiveUrl = new URL(tilePath, window.location.href).href;
+    const gridArchiveUrl = new URL(gridTilePath, window.location.href).href;
+    const polarUrl = new URL(polarPath, window.location.href).href;
     try {
+      const { maplibregl } = await loadMapLibraries();
       const map = new maplibregl.Map({
         container,
         center: [168, -24],
@@ -158,120 +189,113 @@ const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
         'bottom-right',
       );
 
-      let rawGridPending = false;
-      let detailCellsPending = false;
-      let pendingInspection: {
-        point: [number, number];
-        lngLat: [number, number];
-      } | null = null;
-
-      function showPendingInspection(): void {
-        if (!pendingInspection || root.dataset.mode !== 'compacted') return;
-        const features = map.queryRenderedFeatures(pendingInspection.point, {
-          layers: ['land-cell-details'],
+      function addTileLayers(): void {
+        map.addSource('rhealpixTiles', {
+          type: 'vector',
+          url: `pmtiles://${archiveUrl}`,
         });
-        const feature = features[0];
-        if (feature) {
-          new maplibregl.Popup({ closeButton: false, offset: 9 })
-            .setLngLat(pendingInspection.lngLat)
-            .setDOMContent(
-              popupContent(feature.properties?.cell, feature.properties?.resolution),
-            )
-            .addTo(map);
-        }
-        pendingInspection = null;
-      }
-
-      function inspectCompactedCell(event: maplibregl.MapLayerMouseEvent): void {
-        if (root.dataset.mode !== 'compacted') return;
-        pendingInspection = {
-          point: [event.point.x, event.point.y],
-          lngLat: [event.lngLat.lng, event.lngLat.lat],
-        };
-        if (map.getLayer('land-cell-details')) {
-          showPendingInspection();
-          return;
-        }
-        if (detailCellsPending) return;
-
-        detailCellsPending = true;
-        if (status) {
-          status.textContent = 'Loading cell identifiers…';
-          status.hidden = false;
-        }
-        map.addSource('landCellDetails', { type: 'geojson', data: detailCellsUrl });
+        map.addSource('polarOverlay', { type: 'geojson', data: polarUrl });
         map.addLayer({
-          id: 'land-cell-details',
+          id: 'compact-overview-fill',
           type: 'fill',
-          source: 'landCellDetails',
+          source: 'rhealpixTiles',
+          'source-layer': 'compact_overview',
+          maxzoom: 2,
           paint: {
-            'fill-color': '#ffffff',
-            'fill-opacity': 0,
-          },
-        });
-        map.once('idle', () => {
-          detailCellsPending = false;
-          if (status) status.hidden = true;
-          showPendingInspection();
-        });
-      }
-
-      function addPrimaryLayers(): void {
-        map.addSource('landCells', { type: 'geojson', data: cellsUrl });
-        map.addLayer({
-          id: 'land-cell-fill',
-          type: 'fill',
-          source: 'landCells',
-          paint: {
-            'fill-color': [
-              'match',
-              ['get', 'resolution'],
-              1,
-              '#efb366',
-              2,
-              '#e7955d',
-              3,
-              '#d46f68',
-              4,
-              '#9e668f',
-              5,
-              '#46b9ad',
-              '#46b9ad',
-            ],
+            'fill-color': compactColour,
             'fill-opacity': 0.79,
           },
         });
         map.addLayer({
-          id: 'land-cell-grid',
+          id: 'polar-compact-fill',
+          type: 'fill',
+          source: 'polarOverlay',
+          filter: ['==', ['get', 'kind'], 'compact'],
+          paint: {
+            'fill-color': compactColour,
+            'fill-opacity': 0.79,
+          },
+        });
+        map.addLayer({
+          id: 'compact-overview-grid',
           type: 'line',
-          source: 'landCells',
+          source: 'rhealpixTiles',
+          'source-layer': 'compact_overview',
+          maxzoom: 2,
+          paint: {
+            'line-color': '#ecfbff',
+            'line-opacity': 0.34,
+            'line-width': 0.5,
+          },
+        });
+        map.addLayer({
+          id: 'compact-cell-fill',
+          type: 'fill',
+          source: 'rhealpixTiles',
+          'source-layer': 'compact_cells',
+          minzoom: 2,
+          paint: {
+            'fill-color': compactColour,
+            'fill-opacity': 0.79,
+          },
+        });
+        map.addLayer({
+          id: 'compact-cell-grid',
+          type: 'line',
+          source: 'rhealpixTiles',
+          'source-layer': 'compact_cells',
+          minzoom: 2,
           paint: {
             'line-color': '#ecfbff',
             'line-opacity': [
               'interpolate',
               ['linear'],
               ['zoom'],
-              0,
-              0.32,
-              3,
-              0.68,
+              2,
+              0.48,
+              4,
+              0.78,
             ],
             'line-width': [
               'interpolate',
               ['linear'],
               ['zoom'],
-              0,
-              0.45,
-              3,
+              2,
+              0.58,
+              4,
               1.05,
             ],
           },
         });
-        map.addSource('coastlines', { type: 'geojson', data: coastsUrl });
+        map.addLayer({
+          id: 'polar-compact-grid',
+          type: 'line',
+          source: 'polarOverlay',
+          filter: ['==', ['get', 'kind'], 'compact'],
+          paint: {
+            'line-color': '#ecfbff',
+            'line-opacity': 0.68,
+            'line-width': 0.8,
+          },
+        });
+        map.addLayer({
+          id: 'polar-uncompacted-grid',
+          type: 'line',
+          source: 'polarOverlay',
+          filter: ['==', ['get', 'kind'], 'raw_grid'],
+          minzoom: 2,
+          layout: { visibility: 'none' },
+          paint: {
+            'line-color': '#eafcff',
+            'line-opacity': 0.72,
+            'line-width': 0.8,
+          },
+        });
         map.addLayer({
           id: 'coastline',
           type: 'line',
-          source: 'coastlines',
+          source: 'rhealpixTiles',
+          'source-layer': 'coast',
           paint: {
             'line-color': '#f7fcff',
             'line-opacity': 0.9,
@@ -285,6 +309,66 @@ const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
               1.7,
             ],
           },
+        });
+        map.addLayer({
+          id: 'polar-coastline',
+          type: 'line',
+          source: 'polarOverlay',
+          filter: ['==', ['get', 'kind'], 'coast'],
+          paint: {
+            'line-color': '#f7fcff',
+            'line-opacity': 0.9,
+            'line-width': 1.2,
+          },
+        });
+      }
+
+      function ensureUncompactedLayer(): void {
+        if (map.getLayer('uncompacted-grid')) {
+          map.setLayoutProperty('uncompacted-grid', 'visibility', 'visible');
+          return;
+        }
+        if (status) {
+          status.hidden = false;
+          status.textContent = 'Streaming the visible resolution-5 grid…';
+        }
+        map.addSource('rhealpixGridTiles', {
+          type: 'vector',
+          url: `pmtiles://${gridArchiveUrl}`,
+        });
+        map.addLayer(
+          {
+            id: 'uncompacted-grid',
+            type: 'line',
+            source: 'rhealpixGridTiles',
+            'source-layer': 'raw_grid',
+            minzoom: 2,
+            paint: {
+              'line-color': '#eafcff',
+              'line-opacity': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                2,
+                0.28,
+                4,
+                0.72,
+              ],
+              'line-width': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                2,
+                0.42,
+                4,
+                1.05,
+              ],
+            },
+          },
+          'coastline',
+        );
+        map.once('idle', () => {
+          if (status) status.hidden = true;
         });
       }
 
@@ -301,141 +385,111 @@ const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
         if (rawSummary) rawSummary.hidden = compacted;
         if (hint) {
           hint.textContent = compacted
-            ? 'Drag to rotate · select a compacted cell · switch views to compare the hierarchy'
-            : 'Drag to rotate · zoom in to reveal the complete resolution-5 grid';
+            ? 'Drag to rotate · zoom in and select a compacted cell · switch views to compare the hierarchy'
+            : 'Drag to rotate · zoom to level 2 or closer to reveal the complete resolution-5 grid';
         }
 
+        for (const layer of [
+          'compact-overview-grid',
+          'compact-cell-grid',
+          'polar-compact-grid',
+        ]) {
+          map.setLayoutProperty(layer, 'visibility', compacted ? 'visible' : 'none');
+        }
         map.setLayoutProperty(
-          'land-cell-grid',
+          'polar-uncompacted-grid',
           'visibility',
-          compacted ? 'visible' : 'none',
+          compacted ? 'none' : 'visible',
         );
-        map.setPaintProperty(
-          'land-cell-fill',
-          'fill-opacity',
-          compacted ? 0.79 : 0.62,
-        );
-        map.setPaintProperty(
-          'land-cell-fill',
-          'fill-color',
-          compacted
-            ? [
-                'match',
-                ['get', 'resolution'],
-                1,
-                '#efb366',
-                2,
-                '#e7955d',
-                3,
-                '#d46f68',
-                4,
-                '#9e668f',
-                5,
-                '#46b9ad',
-                '#46b9ad',
-              ]
-            : '#46b9ad',
-        );
-
         if (compacted) {
           if (map.getLayer('uncompacted-grid')) {
             map.setLayoutProperty('uncompacted-grid', 'visibility', 'none');
           }
-          return;
+        } else {
+          ensureUncompactedLayer();
         }
+        for (const layer of [
+          'compact-overview-fill',
+          'compact-cell-fill',
+          'polar-compact-fill',
+        ]) {
+          map.setPaintProperty(layer, 'fill-opacity', compacted ? 0.79 : 0.62);
+          map.setPaintProperty(layer, 'fill-color', compacted ? compactColour : '#46b9ad');
+        }
+      }
 
-        if (map.getLayer('uncompacted-grid')) {
-          map.setLayoutProperty('uncompacted-grid', 'visibility', 'visible');
-          return;
-        }
-
-        rawGridPending = true;
-        if (status) {
-          status.textContent = 'Loading 109,396 resolution-5 cells…';
-          status.hidden = false;
-        }
-        map.addSource('uncompactedGrid', { type: 'geojson', data: rawGridUrl });
-        map.addLayer(
-          {
-            id: 'uncompacted-grid',
-            type: 'line',
-            source: 'uncompactedGrid',
-            paint: {
-              'line-color': '#eafcff',
-              'line-opacity': [
-                'interpolate',
-                ['linear'],
-                ['zoom'],
-                0,
-                0.08,
-                1.5,
-                0.3,
-                3,
-                0.72,
-              ],
-              'line-width': [
-                'interpolate',
-                ['linear'],
-                ['zoom'],
-                0,
-                0.2,
-                2,
-                0.55,
-                4,
-                1.05,
-              ],
-            },
-          },
-          'coastline',
-        );
-        map.once('idle', () => {
-          rawGridPending = false;
-          if (status) status.hidden = true;
-        });
+      function inspectCompactedCell(
+        event: import('maplibre-gl').MapLayerMouseEvent,
+      ): void {
+        if (root.dataset.mode !== 'compacted') return;
+        const feature = event.features?.[0];
+        if (!feature) return;
+        new maplibregl.Popup({ closeButton: false, offset: 9 })
+          .setLngLat(event.lngLat)
+          .setDOMContent(
+            popupContent(feature.properties?.cell, feature.properties?.resolution),
+          )
+          .addTo(map);
       }
 
       map.on('load', () => {
         root.classList.add('is-ready');
-        if (status) status.hidden = true;
-        addPrimaryLayers();
+        addTileLayers();
         modeButtons.forEach((button) => {
           button.addEventListener('click', () => {
             const mode = button.dataset.rhpGlobeMode;
             if (mode === 'compacted' || mode === 'uncompacted') setMode(mode);
           });
         });
-        map.on('click', 'land-cell-fill', inspectCompactedCell);
-        map.on('mouseenter', 'land-cell-fill', () => {
+        map.on('click', 'compact-cell-fill', inspectCompactedCell);
+        map.on('click', 'polar-compact-fill', inspectCompactedCell);
+        map.on('mouseenter', 'compact-cell-fill', () => {
           map.getCanvas().style.cursor =
             root.dataset.mode === 'compacted' ? 'pointer' : '';
         });
-        map.on('mouseleave', 'land-cell-fill', () => {
+        map.on('mouseleave', 'compact-cell-fill', () => {
           map.getCanvas().style.cursor = '';
         });
+        map.on('mouseenter', 'polar-compact-fill', () => {
+          map.getCanvas().style.cursor =
+            root.dataset.mode === 'compacted' ? 'pointer' : '';
+        });
+        map.on('mouseleave', 'polar-compact-fill', () => {
+          map.getCanvas().style.cursor = '';
+        });
+        map.once('idle', () => {
+          if (status) status.hidden = true;
+        });
       });
-      map.on('error', () => {
-        if (detailCellsPending && status) {
-          detailCellsPending = false;
-          pendingInspection = null;
-          status.textContent = 'Cell identifiers could not be loaded.';
-          return;
+      map.on('error', (event) => {
+        if (status) {
+          status.hidden = false;
+          status.textContent = 'The map tiles could not be loaded.';
         }
-        if (rawGridPending && status) {
-          rawGridPending = false;
-          status.textContent = 'The uncompacted grid could not be loaded.';
-          return;
-        }
-        if (!root.classList.contains('is-ready') && status) {
-          status.textContent = 'The interactive globe could not be loaded.';
-        }
+        console.error('rHEALPix globe:', event.error);
       });
     } catch {
       if (status) status.textContent = 'This browser cannot display the interactive globe.';
     }
   }
 
+  const globeObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        globeObserver.unobserve(entry.target);
+        void initialiseGlobe(entry.target as HTMLElement);
+      }
+    },
+    { rootMargin: '320px 0px' },
+  );
+
   function initialiseGlobes(): void {
-    document.querySelectorAll<HTMLElement>('[data-rhp-globe]').forEach(initialiseGlobe);
+    document.querySelectorAll<HTMLElement>('[data-rhp-globe]').forEach((root) => {
+      if (activeGlobes.has(root) || queuedGlobes.has(root)) return;
+      queuedGlobes.add(root);
+      globeObserver.observe(root);
+    });
   }
 
   initialiseGlobes();

@@ -23,6 +23,13 @@ resolution classes for fast homepage rendering;
 `rhealpix-land-r5-uncompacted-grid.geojson` contains the deduplicated boundary
 edges of its exact resolution-5 expansion; and
 `natural-earth-coastlines-110m.geojson` contains its reference coastline.
+`rhealpix-land-r5.pmtiles` packages the compact overview, selectable cells, and
+coast into a zoom-dependent vector-tile pyramid.
+`rhealpix-land-r5-grid.pmtiles` keeps the larger uncompacted edge layer separate
+so the default homepage view never downloads it. Both archives are generated
+by `tools/build_globe_pmtiles.py`. `rhealpix-polar-overlay.geojson` is a small
+companion layer that preserves cells and coast beyond the ±85.05° Web Mercator
+limit used by browser vector tiles.
 
 `ne_10m_nz_land.geojson` is a New Zealand-only extract of the Natural Earth
 1:10 million land polygon dataset, version 5.1.1. It retains the source

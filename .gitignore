@@ -12,5 +12,6 @@ __pycache__/
 *.pyd
 dist/
 build/
+.pmtiles-build/
 *.gpkg
 benchmark-results*/

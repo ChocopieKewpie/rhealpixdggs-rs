@@ -26,6 +26,7 @@ maturin develop --release
 python -m pytest
 python tools/generate_readme_figures.py --check
 python tools/generate_globe_data.py --check
+python tools/build_globe_pmtiles.py --check
 python tools/check_documented_python_api.py
 npm ci
 npm run build
@@ -58,13 +59,36 @@ sibling groups, and export the resulting geographic cell boundaries:
 ```bash
 python tools/generate_globe_data.py
 python tools/generate_globe_data.py --check
+python tools/build_globe_pmtiles.py
+python tools/build_globe_pmtiles.py --check
 ```
 
-The published site loads a five-feature render-optimised compact cover and the
-coastline from committed static GeoJSON; it does not run polygon coverage in
-the browser. The detailed cell-ID source remains available for inspection,
-while the larger, deduplicated uncompacted r5 edge grid is fetched only if a
-visitor selects that view.
+The tile build uses an installed `tippecanoe`, or a pinned Tippecanoe Node
+wrapper when `npx` is available. It creates a compact land/coast archive and a
+separate uncompacted-grid archive. The published site range-loads only visible
+vector tiles. The larger grid archive is not contacted until a visitor selects
+that view, and MapLibre itself is loaded only when the globe is close to the
+viewport.
+
+The default—and cheapest—production setup is the existing GitHub Pages
+deployment. The two `.pmtiles` files are copied from `docs/data/` into the
+published site and served from the same origin. No storage account, access
+token, CORS configuration, release asset, or repository variable is required.
+
+External object storage is only an optional future scaling path. If the Pages
+site eventually outgrows its bandwidth allowance, set these public Astro
+environment variables to the absolute URLs of range-enabled storage:
+
+```bash
+PUBLIC_RHEALPIX_PMTILES_URL=https://data.example.org/rhealpix-land-r5.pmtiles
+PUBLIC_RHEALPIX_GRID_PMTILES_URL=https://data.example.org/rhealpix-land-r5-grid.pmtiles
+npm run build
+```
+
+Without those variables—which is the recommended configuration now—local
+development and GitHub Pages both use the committed copies under `docs/data/`.
+The GitHub Actions workflow reads optional repository variables with the same
+names but works normally when they are absent.
 
 ## Documentation site
 

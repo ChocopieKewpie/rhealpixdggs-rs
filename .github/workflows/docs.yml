@@ -13,6 +13,7 @@ on:
       - "examples/cas_crash_density.py"
       - "tools/check_documented_python_api.py"
       - "tools/generate_globe_data.py"
+      - "tools/build_globe_pmtiles.py"
       - ".github/workflows/docs.yml"
   pull_request:
     paths:
@@ -25,6 +26,7 @@ on:
       - "examples/cas_crash_density.py"
       - "tools/check_documented_python_api.py"
       - "tools/generate_globe_data.py"
+      - "tools/build_globe_pmtiles.py"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -40,6 +42,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      PUBLIC_RHEALPIX_PMTILES_URL: ${{ vars.PUBLIC_RHEALPIX_PMTILES_URL }}
+      PUBLIC_RHEALPIX_GRID_PMTILES_URL: ${{ vars.PUBLIC_RHEALPIX_GRID_PMTILES_URL }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v5

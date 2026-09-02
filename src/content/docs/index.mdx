@@ -41,9 +41,11 @@ the full resolution-5 subdivision.
 
 <RhealpixGlobe />
 
-The map is self-contained: its GeoJSON is generated with the public
-`polygon_to_cells_intersects()`, `compact_cells()`, and cell-boundary APIs. It
-does not depend on an external basemap or access token.
+The map data is generated with the public `polygon_to_cells_intersects()`,
+`compact_cells()`, and cell-boundary APIs, then compiled into PMTiles vector
+archives. The browser requests only the archive header and visible tile ranges;
+the uncompacted grid archive is not contacted until you select that view. No
+external basemap or access token is required.
 
 ## Work by task
 

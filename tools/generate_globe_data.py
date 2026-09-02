@@ -28,6 +28,8 @@ UNCOMPACTED_OUTPUT = (
     ROOT / "docs" / "data" / "rhealpix-land-r5-uncompacted-grid.geojson"
 )
 COASTS_OUTPUT = ROOT / "docs" / "data" / "natural-earth-coastlines-110m.geojson"
+POLAR_OUTPUT = ROOT / "docs" / "data" / "rhealpix-polar-overlay.geojson"
+POLAR_OVERLAP_LATITUDE = 84.8
 Point = tuple[float, float]
 Ring = list[Point]
 
@@ -505,6 +507,63 @@ def _coast_collection(records: Sequence[Sequence[Ring]]) -> dict[str, Any]:
     }
 
 
+def _positions(value: Any) -> Any:
+    if (
+        isinstance(value, list)
+        and len(value) >= 2
+        and isinstance(value[0], (int, float))
+        and isinstance(value[1], (int, float))
+    ):
+        yield value
+        return
+    if isinstance(value, list):
+        for child in value:
+            yield from _positions(child)
+
+
+def _polar_overlay_collection(
+    cells: dict[str, Any], grid: dict[str, Any], coasts: dict[str, Any]
+) -> dict[str, Any]:
+    """Preserve the small area outside Web Mercator's vector-tile limit."""
+
+    features: list[dict[str, Any]] = []
+    for feature in cells["features"]:
+        if any(
+            abs(position[1]) >= POLAR_OVERLAP_LATITUDE
+            for position in _positions(feature["geometry"]["coordinates"])
+        ):
+            features.append(
+                {
+                    **feature,
+                    "properties": {**feature["properties"], "kind": "compact"},
+                }
+            )
+
+    for kind, collection in (("raw_grid", grid), ("coast", coasts)):
+        lines = [
+            line
+            for line in collection["features"][0]["geometry"]["coordinates"]
+            if any(abs(position[1]) >= POLAR_OVERLAP_LATITUDE for position in line)
+        ]
+        features.append(
+            {
+                "type": "Feature",
+                "properties": {"kind": kind},
+                "geometry": {"type": "MultiLineString", "coordinates": lines},
+            }
+        )
+
+    return {
+        "type": "FeatureCollection",
+        "name": "rHEALPix polar overlay outside the Web Mercator tile extent",
+        "metadata": {
+            "overlap_latitude": POLAR_OVERLAP_LATITUDE,
+            "purpose": "Preserve polar geometry beyond the PMTiles latitude limit",
+        },
+        "features": features,
+    }
+
+
 def _serialise(value: dict[str, Any]) -> bytes:
     return (json.dumps(value, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
 
@@ -536,11 +595,20 @@ def main() -> None:
         + ", ".join(f"r{resolution}={count:,}" for resolution, count in sorted(counts.items()))
     )
 
+    cell_collection = _cell_collection(rh, cells)
+    render_collection = _render_collection(rh, cells)
+    uncompacted_collection = _uncompacted_grid_collection(rh, cells)
+    coast_collection = _coast_collection(records)
     outputs = {
-        CELLS_OUTPUT: _serialise(_cell_collection(rh, cells)),
-        RENDER_OUTPUT: _serialise(_render_collection(rh, cells)),
-        UNCOMPACTED_OUTPUT: _serialise(_uncompacted_grid_collection(rh, cells)),
-        COASTS_OUTPUT: _serialise(_coast_collection(records)),
+        CELLS_OUTPUT: _serialise(cell_collection),
+        RENDER_OUTPUT: _serialise(render_collection),
+        UNCOMPACTED_OUTPUT: _serialise(uncompacted_collection),
+        COASTS_OUTPUT: _serialise(coast_collection),
+        POLAR_OUTPUT: _serialise(
+            _polar_overlay_collection(
+                cell_collection, uncompacted_collection, coast_collection
+            )
+        ),
     }
     stale = [
         path
