@@ -21,6 +21,9 @@ from typing import Any, Optional, Sequence
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "docs" / "data" / "ne_110m_land.shp"
 CELLS_OUTPUT = ROOT / "docs" / "data" / "rhealpix-land-r5-compacted.geojson"
+RENDER_OUTPUT = (
+    ROOT / "docs" / "data" / "rhealpix-land-r5-compacted-render.geojson"
+)
 UNCOMPACTED_OUTPUT = (
     ROOT / "docs" / "data" / "rhealpix-land-r5-uncompacted-grid.geojson"
 )
@@ -354,11 +357,13 @@ def _cap_geometry(latitude: float, north: bool) -> dict[str, Any]:
     return {"type": "Polygon", "coordinates": [ring]}
 
 
-def _cell_geometry(rh: Any, identifier: str) -> dict[str, Any]:
+def _cell_geometry(
+    rh: Any, identifier: str, density: int = 3
+) -> dict[str, Any]:
     cell = rh.WGS84_003.cell(identifier)
     boundary = [
         (float(longitude), float(latitude))
-        for longitude, latitude in cell.boundary(n=3, plane=False)
+        for longitude, latitude in cell.boundary(n=density, plane=False)
     ]
     if cell.ellipsoidal_shape == "cap":
         latitude = sum(point[1] for point in boundary) / len(boundary)
@@ -390,6 +395,42 @@ def _cell_collection(rh: Any, cells: Sequence[str]) -> dict[str, Any]:
                 "geometry": _cell_geometry(rh, cell),
             }
             for cell in cells
+        ],
+    }
+
+
+def _render_collection(rh: Any, cells: Sequence[str]) -> dict[str, Any]:
+    """Group cell polygons by resolution for fast MapLibre startup."""
+
+    groups: dict[int, list[list[list[list[float]]]]] = {}
+    for identifier in cells:
+        resolution = len(identifier) - 1
+        density = 5 if resolution <= 2 else 3 if resolution == 3 else 2
+        geometry = _cell_geometry(rh, identifier, density=density)
+        polygons = (
+            [geometry["coordinates"]]
+            if geometry["type"] == "Polygon"
+            else geometry["coordinates"]
+        )
+        groups.setdefault(resolution, []).extend(polygons)
+
+    return {
+        "type": "FeatureCollection",
+        "name": "Render-optimised compacted rHEALPix land cover",
+        "metadata": {
+            "coverage_resolution": 5,
+            "cell_count": len(cells),
+            "feature_count": len(groups),
+            "coverage_mode": "intersects",
+            "source": "Natural Earth 1:110m land",
+        },
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"resolution": resolution},
+                "geometry": {"type": "MultiPolygon", "coordinates": polygons},
+            }
+            for resolution, polygons in sorted(groups.items())
         ],
     }
 
@@ -497,6 +538,7 @@ def main() -> None:
 
     outputs = {
         CELLS_OUTPUT: _serialise(_cell_collection(rh, cells)),
+        RENDER_OUTPUT: _serialise(_render_collection(rh, cells)),
         UNCOMPACTED_OUTPUT: _serialise(_uncompacted_grid_collection(rh, cells)),
         COASTS_OUTPUT: _serialise(_coast_collection(records)),
     }

@@ -18,6 +18,8 @@ The figure and globe-data generators contain small, read-only parsers for the
 polygon records in this shapefile. The DBF attributes and spatial index are not
 required. `rhealpix-land-r5-compacted.geojson` contains the resolution-5
 intersects cover after lossless sibling compaction;
+`rhealpix-land-r5-compacted-render.geojson` groups those polygons into five
+resolution classes for fast homepage rendering;
 `rhealpix-land-r5-uncompacted-grid.geojson` contains the deduplicated boundary
 edges of its exact resolution-5 expansion; and
 `natural-earth-coastlines-110m.geojson` contains its reference coastline.

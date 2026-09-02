@@ -58,7 +58,7 @@ remains fully offline.
 The interactive homepage globe uses the same Natural Earth source to create a
 resolution-5 land cover with `polygon_to_cells_intersects()`, compact complete
 sibling groups, and export the resulting geographic cell boundaries. Generate
-or verify its three committed GeoJSON assets with:
+or verify its four committed GeoJSON assets with:
 
 ```bash
 python tools/generate_globe_data.py
@@ -66,9 +66,11 @@ python tools/generate_globe_data.py --check
 ```
 
 This calculation is intentionally an offline documentation build step; the
-published page loads the finished compact cover and coastline without running
-polygon coverage in the browser. The larger, deduplicated uncompacted r5 edge
-grid is fetched only if a visitor selects that view.
+published page loads a five-feature render-optimised compact cover and the
+coastline without running polygon coverage in the browser. The detailed
+cell-ID source remains available for inspection, while the larger,
+deduplicated uncompacted r5 edge grid is fetched only if a visitor selects that
+view.
 
 ## Documentation site
 

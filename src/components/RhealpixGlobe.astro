@@ -2,7 +2,8 @@
 const base = import.meta.env.BASE_URL.endsWith('/')
   ? import.meta.env.BASE_URL
   : `${import.meta.env.BASE_URL}/`;
-const cellsPath = `${base}data/rhealpix-land-r5-compacted.geojson`;
+const cellsPath = `${base}data/rhealpix-land-r5-compacted-render.geojson`;
+const detailCellsPath = `${base}data/rhealpix-land-r5-compacted.geojson`;
 const rawGridPath = `${base}data/rhealpix-land-r5-uncompacted-grid.geojson`;
 const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
 ---
@@ -11,6 +12,7 @@ const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
   class="rhp-globe"
   data-rhp-globe
   data-cells={cellsPath}
+  data-detail-cells={detailCellsPath}
   data-raw-grid={rawGridPath}
   data-coasts={coastsPath}
   data-mode="compacted"
@@ -21,9 +23,11 @@ const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
     role="region"
     aria-label="Interactive globe comparing compacted and uncompacted resolution-5 rHEALPix land coverage"
   ></div>
-  <div class="rhp-globe__loading" data-rhp-globe-status>Preparing the global grid…</div>
+  <div class="rhp-globe__loading" data-rhp-globe-status aria-live="polite">
+    Starting the globe…
+  </div>
   <div class="rhp-globe__hint" data-rhp-globe-hint>
-    Drag to rotate · scroll or pinch to zoom · select a compacted cell to inspect it
+    Drag to rotate · select a compacted cell · switch views to compare the hierarchy
   </div>
   <div class="rhp-globe__toolbar">
     <div class="rhp-globe__toggle" role="group" aria-label="Land-grid representation">
@@ -66,14 +70,12 @@ const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
   function popupContent(cell: unknown, resolution: unknown): HTMLElement {
     const content = document.createElement('div');
     content.className = 'rhp-globe-popup';
-
     const label = document.createElement('span');
     label.textContent = 'rHEALPix cell';
     const identifier = document.createElement('strong');
     identifier.textContent = String(cell ?? 'Unknown');
     const detail = document.createElement('small');
     detail.textContent = `Compacted at resolution ${String(resolution ?? '—')}`;
-
     content.append(label, identifier, detail);
     return content;
   }
@@ -90,10 +92,14 @@ const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
     const rawSummary = root.querySelector<HTMLElement>('[data-rhp-globe-raw-summary]');
     const modeButtons = root.querySelectorAll<HTMLButtonElement>('[data-rhp-globe-mode]');
     const cells = root.dataset.cells;
+    const detailCells = root.dataset.detailCells;
     const rawGrid = root.dataset.rawGrid;
     const coasts = root.dataset.coasts;
-    if (!container || !cells || !rawGrid || !coasts) return;
+    if (!container || !cells || !detailCells || !rawGrid || !coasts) return;
+    const cellsUrl = cells;
+    const detailCellsUrl = detailCells;
     const rawGridUrl = rawGrid;
+    const coastsUrl = coasts;
 
     try {
       const map = new maplibregl.Map({
@@ -127,58 +133,12 @@ const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
             intensity: 0.4,
             position: [1.5, 90, 65],
           },
-          sources: {
-            landCells: { type: 'geojson', data: cells },
-            coastlines: { type: 'geojson', data: coasts },
-          },
+          sources: {},
           layers: [
             {
               id: 'ocean',
               type: 'background',
               paint: { 'background-color': '#102b45' },
-            },
-            {
-              id: 'land-cell-fill',
-              type: 'fill',
-              source: 'landCells',
-              paint: {
-                'fill-color': [
-                  'match',
-                  ['get', 'resolution'],
-                  1,
-                  '#efb366',
-                  2,
-                  '#e7955d',
-                  3,
-                  '#d46f68',
-                  4,
-                  '#9e668f',
-                  5,
-                  '#46b9ad',
-                  '#46b9ad',
-                ],
-                'fill-opacity': 0.79,
-              },
-            },
-            {
-              id: 'land-cell-grid',
-              type: 'line',
-              source: 'landCells',
-              paint: {
-                'line-color': '#ecfbff',
-                'line-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.32, 3, 0.68],
-                'line-width': ['interpolate', ['linear'], ['zoom'], 0, 0.45, 3, 1.05],
-              },
-            },
-            {
-              id: 'coastline',
-              type: 'line',
-              source: 'coastlines',
-              paint: {
-                'line-color': '#f7fcff',
-                'line-opacity': 0.9,
-                'line-width': ['interpolate', ['linear'], ['zoom'], 0, 0.8, 3, 1.7],
-              },
             },
           ],
         },
@@ -199,6 +159,134 @@ const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
       );
 
       let rawGridPending = false;
+      let detailCellsPending = false;
+      let pendingInspection: {
+        point: [number, number];
+        lngLat: [number, number];
+      } | null = null;
+
+      function showPendingInspection(): void {
+        if (!pendingInspection || root.dataset.mode !== 'compacted') return;
+        const features = map.queryRenderedFeatures(pendingInspection.point, {
+          layers: ['land-cell-details'],
+        });
+        const feature = features[0];
+        if (feature) {
+          new maplibregl.Popup({ closeButton: false, offset: 9 })
+            .setLngLat(pendingInspection.lngLat)
+            .setDOMContent(
+              popupContent(feature.properties?.cell, feature.properties?.resolution),
+            )
+            .addTo(map);
+        }
+        pendingInspection = null;
+      }
+
+      function inspectCompactedCell(event: maplibregl.MapLayerMouseEvent): void {
+        if (root.dataset.mode !== 'compacted') return;
+        pendingInspection = {
+          point: [event.point.x, event.point.y],
+          lngLat: [event.lngLat.lng, event.lngLat.lat],
+        };
+        if (map.getLayer('land-cell-details')) {
+          showPendingInspection();
+          return;
+        }
+        if (detailCellsPending) return;
+
+        detailCellsPending = true;
+        if (status) {
+          status.textContent = 'Loading cell identifiers…';
+          status.hidden = false;
+        }
+        map.addSource('landCellDetails', { type: 'geojson', data: detailCellsUrl });
+        map.addLayer({
+          id: 'land-cell-details',
+          type: 'fill',
+          source: 'landCellDetails',
+          paint: {
+            'fill-color': '#ffffff',
+            'fill-opacity': 0,
+          },
+        });
+        map.once('idle', () => {
+          detailCellsPending = false;
+          if (status) status.hidden = true;
+          showPendingInspection();
+        });
+      }
+
+      function addPrimaryLayers(): void {
+        map.addSource('landCells', { type: 'geojson', data: cellsUrl });
+        map.addLayer({
+          id: 'land-cell-fill',
+          type: 'fill',
+          source: 'landCells',
+          paint: {
+            'fill-color': [
+              'match',
+              ['get', 'resolution'],
+              1,
+              '#efb366',
+              2,
+              '#e7955d',
+              3,
+              '#d46f68',
+              4,
+              '#9e668f',
+              5,
+              '#46b9ad',
+              '#46b9ad',
+            ],
+            'fill-opacity': 0.79,
+          },
+        });
+        map.addLayer({
+          id: 'land-cell-grid',
+          type: 'line',
+          source: 'landCells',
+          paint: {
+            'line-color': '#ecfbff',
+            'line-opacity': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              0,
+              0.32,
+              3,
+              0.68,
+            ],
+            'line-width': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              0,
+              0.45,
+              3,
+              1.05,
+            ],
+          },
+        });
+        map.addSource('coastlines', { type: 'geojson', data: coastsUrl });
+        map.addLayer({
+          id: 'coastline',
+          type: 'line',
+          source: 'coastlines',
+          paint: {
+            'line-color': '#f7fcff',
+            'line-opacity': 0.9,
+            'line-width': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              0,
+              0.8,
+              3,
+              1.7,
+            ],
+          },
+        });
+      }
 
       function setMode(mode: 'compacted' | 'uncompacted'): void {
         const compacted = mode === 'compacted';
@@ -213,7 +301,7 @@ const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
         if (rawSummary) rawSummary.hidden = compacted;
         if (hint) {
           hint.textContent = compacted
-            ? 'Drag to rotate · scroll or pinch to zoom · select a compacted cell to inspect it'
+            ? 'Drag to rotate · select a compacted cell · switch views to compare the hierarchy'
             : 'Drag to rotate · zoom in to reveal the complete resolution-5 grid';
         }
 
@@ -309,33 +397,29 @@ const coastsPath = `${base}data/natural-earth-coastlines-110m.geojson`;
       map.on('load', () => {
         root.classList.add('is-ready');
         if (status) status.hidden = true;
+        addPrimaryLayers();
         modeButtons.forEach((button) => {
           button.addEventListener('click', () => {
             const mode = button.dataset.rhpGlobeMode;
             if (mode === 'compacted' || mode === 'uncompacted') setMode(mode);
           });
         });
-      });
-      map.on('click', 'land-cell-fill', (event: maplibregl.MapLayerMouseEvent) => {
-        if (root.dataset.mode !== 'compacted') return;
-        const feature = event.features?.[0];
-        if (!feature) return;
-        const coordinates = event.lngLat;
-        new maplibregl.Popup({ closeButton: false, offset: 9 })
-          .setLngLat(coordinates)
-          .setDOMContent(
-            popupContent(feature.properties?.cell, feature.properties?.resolution),
-          )
-          .addTo(map);
-      });
-      map.on('mouseenter', 'land-cell-fill', () => {
-        map.getCanvas().style.cursor =
-          root.dataset.mode === 'compacted' ? 'pointer' : '';
-      });
-      map.on('mouseleave', 'land-cell-fill', () => {
-        map.getCanvas().style.cursor = '';
+        map.on('click', 'land-cell-fill', inspectCompactedCell);
+        map.on('mouseenter', 'land-cell-fill', () => {
+          map.getCanvas().style.cursor =
+            root.dataset.mode === 'compacted' ? 'pointer' : '';
+        });
+        map.on('mouseleave', 'land-cell-fill', () => {
+          map.getCanvas().style.cursor = '';
+        });
       });
       map.on('error', () => {
+        if (detailCellsPending && status) {
+          detailCellsPending = false;
+          pendingInspection = null;
+          status.textContent = 'Cell identifiers could not be loaded.';
+          return;
+        }
         if (rawGridPending && status) {
           rawGridPending = false;
           status.textContent = 'The uncompacted grid could not be loaded.';

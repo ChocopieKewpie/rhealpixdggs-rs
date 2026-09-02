@@ -60,9 +60,11 @@ python tools/generate_globe_data.py
 python tools/generate_globe_data.py --check
 ```
 
-The published site loads the committed static GeoJSON; it does not run polygon
-coverage in the browser. The larger, deduplicated uncompacted r5 edge grid is
-fetched only if a visitor selects that view.
+The published site loads a five-feature render-optimised compact cover and the
+coastline from committed static GeoJSON; it does not run polygon coverage in
+the browser. The detailed cell-ID source remains available for inspection,
+while the larger, deduplicated uncompacted r5 edge grid is fetched only if a
+visitor selects that view.
 
 ## Documentation site
 

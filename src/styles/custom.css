@@ -230,14 +230,21 @@
   .rhp-globe__loading {
     position: absolute;
     z-index: 3;
-    inset: 0;
-    display: grid;
-    place-items: center;
+    inset-block-start: 50%;
+    inset-inline-start: 50%;
+    max-width: calc(100% - 2rem);
+    padding: 0.55rem 0.78rem;
+    border: 1px solid rgb(225 248 255 / 0.22);
+    border-radius: 0.62rem;
     color: #dff8ff;
-    background: rgb(7 24 39 / 0.68);
-    font-size: 0.92rem;
+    background: rgb(7 24 39 / 0.84);
+    box-shadow: 0 8px 25px rgb(0 0 0 / 0.22);
+    font-size: 0.82rem;
     font-weight: 680;
     letter-spacing: 0.02em;
+    white-space: nowrap;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
     backdrop-filter: blur(3px);
   }
 
