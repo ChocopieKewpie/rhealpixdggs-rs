@@ -388,6 +388,13 @@ def _projected_boundary(identifier: str, density: int = 2) -> List[Point]:
     return [(float(x), float(y)) for x, y in boundary]
 
 
+def _geographic_boundary(identifier: str, density: int = 2) -> List[Point]:
+    boundary = rh.WGS84_003.cell(identifier).boundary(n=density, plane=False)
+    # Cell.boundary() returns (longitude, latitude); the drawing helpers use
+    # the public functional API's (latitude, longitude) convention.
+    return [(float(latitude), float(longitude)) for longitude, latitude in boundary]
+
+
 def _draw_projected_grid(
     identifiers: Iterable[str],
     transform: Callable[[Point], Point],
@@ -522,20 +529,90 @@ def _normalise_boundary(boundary: List[Point], x: float, y: float, width: float,
     return [(offset_x + (lon - min_x) * scale, offset_y + (max_y - lat) * scale) for lon, lat in zip(lons, lats)]
 
 
+def _normalise_polar_boundary(
+    boundary: List[Point],
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    centre_on_pole: bool = False,
+) -> List[Point]:
+    """Draw an API geographic boundary in a pole-centred azimuthal view."""
+    pole = 1.0 if sum(latitude for latitude, _ in boundary) >= 0.0 else -1.0
+    colatitudes = [90.0 - pole * latitude for latitude, _ in boundary]
+    polar_points: List[Point] = []
+    for (_, longitude), colatitude in zip(boundary, colatitudes):
+        angle = math.radians(longitude)
+        polar_points.append(
+            (colatitude * math.sin(angle), -pole * colatitude * math.cos(angle))
+        )
+    if centre_on_pole:
+        max_radius = max(max(colatitudes), 1e-12)
+        scale = min(width, height) * 0.5 / max_radius
+        centre_x = x + width * 0.5
+        centre_y = y + height * 0.5
+        return [(centre_x + px * scale, centre_y + py * scale) for px, py in polar_points]
+    min_x, max_x, min_y, max_y = _bounds(polar_points)
+    span_x, span_y = max(max_x - min_x, 1e-12), max(max_y - min_y, 1e-12)
+    scale = min(width / span_x, height / span_y)
+    offset_x = x + (width - span_x * scale) * 0.5
+    offset_y = y + (height - span_y * scale) * 0.5
+    return [
+        (offset_x + (px - min_x) * scale, offset_y + (py - min_y) * scale)
+        for px, py in polar_points
+    ]
+
+
 def cell_shapes() -> str:
-    examples = [("P2", "quad", "blue"), ("N", "cap", "violet"), ("N26", "dart", "coral"), ("S43", "skew_quad", "teal")]
-    for identifier, shape, _ in examples:
+    examples = [
+        ("P2", "quad", "blue", "longitude / latitude"),
+        ("N", "cap", "violet", "north-polar view"),
+        ("N26", "dart", "coral", "north-polar view"),
+        ("S43", "skew_quad", "teal", "south-polar view"),
+    ]
+    for identifier, shape, _, _ in examples:
         assert rh.get_cell_shape(identifier) == shape
-    parts = [text(600, 36, "Square subdivision, shape-aware geography", 25, weight=700)]
-    for index, (identifier, shape, color) in enumerate(examples):
+    parts = [text(600, 34, "The same cells in projected and geographic space", 25, weight=700)]
+    for index, (identifier, shape, color, view) in enumerate(examples):
         x = 28 + index * 292
-        parts.append(rect(x, 70, 268, 350, "panel", 12))
-        boundary = rh.cell_to_boundary_densified(identifier, points_per_edge=12)
-        points = _normalise_boundary(boundary, x + 35, 120, 198, 185)
+        parts.append(rect(x, 62, 268, 506, "panel", 12))
+        parts += [
+            text(x + 134, 91, identifier, 19, weight=700),
+            text(x + 134, 116, shape.replace("_", " "), 15, "muted", weight=700),
+            text(x + 134, 149, "plane=True · projected", 14, weight=700),
+        ]
+
+        projected_boundary = _projected_boundary(identifier, density=12)
+        projected_transform = _transform(
+            _bounds(projected_boundary),
+            (x + 64, 163, 140, 126),
+            5,
+        )
+        projected_points = [projected_transform(point) for point in projected_boundary]
+        parts.append(polygon(projected_points, color))
+        parts.append(text(x + 134, 311, "square subdivision", 13, "muted"))
+        parts.append(line(x + 24, 329, x + 244, 329, "grid", 1))
+        parts.append(text(x + 134, 357, "plane=False · geographic", 14, weight=700))
+
+        boundary = _geographic_boundary(identifier, density=12)
+        if shape == "quad":
+            points = _normalise_boundary(boundary, x + 54, 374, 160, 145)
+        else:
+            points = _normalise_polar_boundary(
+                boundary,
+                x + 54,
+                374,
+                160,
+                145,
+                centre_on_pole=shape == "cap",
+            )
         parts.append(polygon(points, color))
-        parts += [text(x + 134, 98, identifier, 19, weight=700), text(x + 134, 340, shape.replace("_", " "), 18, weight=700), text(x + 134, 368, "geographic boundary", 14, "muted")]
-    parts += [text(600, 462, "Every cell begins as a projected square; inverse projection folds polar squares into caps, darts and skew quads.", 15, "muted")]
-    return svg(1200, 495, "\n".join(parts), "Geographic rHEALPix cell shapes")
+        parts.append(text(x + 134, 548, view, 13, "muted"))
+    parts += [
+        text(600, 608, "Both rows use Cell.boundary(n=12, plane=...) from the public API; no replacement geometry is used.", 14, "muted"),
+        text(600, 632, "Polar geographic boundaries use pole-centred views so the cap remains circular rather than splitting at ±180°.", 14, "muted"),
+    ]
+    return svg(1200, 655, "\n".join(parts), "Projected and geographic views of rHEALPix cell shapes")
 
 
 def topology_seams() -> str:

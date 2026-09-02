@@ -1,5 +1,8 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import { unified } from "@astrojs/markdown-remark";
+import rehypeKatex from "rehype-katex";
+import remarkMath from "remark-math";
 
 const base = "/rhealpixdggs-rs";
 
@@ -8,6 +11,12 @@ export default defineConfig({
   base,
   publicDir: "./docs",
   trailingSlash: "always",
+  markdown: {
+    processor: unified({
+      remarkPlugins: [remarkMath],
+      rehypePlugins: [rehypeKatex],
+    }),
+  },
   integrations: [
     starlight({
       title: "rHEALPix DGGS",

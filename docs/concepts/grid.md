@@ -101,7 +101,7 @@ shapes differ because a map projection must distort the globe. Equatorial
 cells are geographic quadrilaterals; polar cells may be caps, darts, or skew
 quadrilaterals.
 
-![Quad, cap, dart and skew-quad geographic cells](../images/cell-shapes.svg)
+![Projected and geographic views of quad, cap, dart and skew-quad cells](../images/cell-shapes.svg)
 
 The shape names returned by `get_cell_shape` are `quad`, `cap`, `dart`, and
 `skew_quad`.
@@ -116,4 +116,3 @@ neighbours.
 
 Use [topology and traversal functions](../api/topology.md) rather than inferring
 adjacency from a flat rendering.
-

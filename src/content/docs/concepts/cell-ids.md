@@ -17,17 +17,17 @@ lowercase variants are accepted by `is_valid_cell`.
 ## Stable integer mapping
 
 The current representation is resolution-major—not bit-packed. For resolution
-(r):
+$r$:
 
-\[
+$$
 \operatorname{id} = \operatorname{offset}(r)
   + \operatorname{face} \times 9^r
   + \operatorname{base9}(\text{digits})
-\]
+$$
 
-\[
+$$
 \operatorname{offset}(r) = 6 \times \frac{9^r - 1}{8}
-\]
+$$
 
 Face numbers are `N=0`, `O=1`, `P=2`, `Q=3`, `R=4`, and `S=5`.
 

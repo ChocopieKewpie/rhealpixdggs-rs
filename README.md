@@ -35,7 +35,7 @@ The planar grid is square, but inverse projection folds the two polar faces
 onto the ellipsoid. That produces four geographic shape classes in the current
 implementation: quads, caps, darts, and skew quads.
 
-![Quad, cap, dart and skew-quad geographic cells](docs/images/cell-shapes.svg)
+![Projected and geographic views of quad, cap, dart and skew-quad cells](docs/images/cell-shapes.svg)
 
 The same cells can be rendered as ordinary EPSG:4326-style longitude/latitude
 geometry. This view uses densified boundaries from the library, splits wrapped
